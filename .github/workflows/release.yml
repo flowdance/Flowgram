@@ -219,6 +219,8 @@ jobs:
         run: |
           sed -i "s/2000000000000/$(date +%s%N | cut -c1-13)/g" gradle.properties
           echo "sdk.dir=${ANDROID_HOME}" >> local.properties
+      - name: Restore keystore
+        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > TMessagesProj/release.keystore
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
       - name: Release Build
@@ -239,40 +241,23 @@ jobs:
         with:
           name: Release
           path: ${{ env.APK }}
-  upload:
-    name: Upload release
+  release:
+    name: GitHub Release
     if: github.event.inputs.upload != 'y'
     runs-on: ubuntu-latest
     needs:
       - build
+    permissions:
+      contents: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-      - name: Remove gradle.properties
-        run: |
-          rm -f gradle.properties
-      - name: Download gradle.properties
-        uses: actions/download-artifact@v8
-        with:
-          name: gradle-properties
-          path: .
-      - name: Donwload Artifacts
+      - name: Download Artifacts
         uses: actions/download-artifact@v8
         with:
           path: artifacts
-      - name: Set up Python
-        uses: actions/setup-python@v7
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          python-version: 3.12
-      - name: Send to Telegram
-        run: |
-          # send release via telegram bot api
-          export mini64=$(find artifacts -name "*arm64-v8a.apk")
-          export mini32=$(find artifacts -name "*armeabi-v7a.apk")
-
-          echo $mini64
-          echo $mini32
-
-          python -m pip install -r bin/scripts/requirements.txt
-          git log -1 --pretty=format:"%s%n%n%b" > artifacts/caption.txt
-          python bin/scripts/upload.py ${{ secrets.HELPER_BOT_TOKEN }} ${{ secrets.HELPER_BOT_TARGET }} release
+          tag_name: v${{ github.run_number }}
+          name: Flowgram v${{ github.run_number }}
+          files: artifacts/**/*.apk
+          generate_release_notes: true

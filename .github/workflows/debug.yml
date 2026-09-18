@@ -216,6 +216,8 @@ jobs:
         run: |
           sed -i "s/2000000000000/$(date +%s%N | cut -c1-13)/g" gradle.properties
           echo "sdk.dir=${ANDROID_HOME}" >> local.properties
+      - name: Restore keystore
+        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > TMessagesProj/release.keystore
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
         with:
