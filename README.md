@@ -16,6 +16,23 @@ assets. Modified, forked, and third-party distributions must use distinct
 branding and replace the Nagram brand assets. See [BRANDING.md](BRANDING.md)
 for the complete policy.
 
+## Versioning (Flowgram fork)
+
+`versionCode` is time-based: UTC seconds elapsed since 2026-01-01T00:00:00Z
+(taken from CI's `APP_BUILD_TIMESTAMP` stamp, or the current time for local
+builds). It is strictly increasing per second, so any number of builds per day
+get distinct, upgradeable codes, and it always stays far above upstream
+Nagram's small counter — a merge can never regress below an already-shipped
+build. Headroom: valid until 2094.
+
+Android's `versionCode` is a 31-bit int (max 2147483647), so a full
+`yyMMddHHmmss` stamp cannot fit inside it. The readable stamp is therefore
+embedded in the APK file name instead (Beijing time, `Asia/Shanghai`), e.g.
+`Flowgram-v12.10.1-260919074243-arm64-v8a.apk`.
+
+**Merge rule:** on a conflict in `TMessagesProj/build.gradle` around
+`verCode`, keep our side.
+
 ## Additional feature over Nagram
 
 1. Nice icon (copyright © MaitungTM)

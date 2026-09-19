@@ -23,7 +23,24 @@ idea {
 }
 
 def verName = APP_VERSION_NAME
-def verCode = 1248
+// Flowgram fork: time-based versionCode. Android's versionCode is a 31-bit int
+// (max 2147483647), so a full yyMMddHHmmss stamp cannot fit (260918234512 >
+// 2^31 - 1). Instead we count UTC seconds since 2026-01-01T00:00:00Z:
+// strictly increasing per second, so any number of builds per day get
+// distinct codes, with headroom until 2094. This also stays far above
+// upstream Nagram's small counter, so merges can never regress below an
+// already-shipped build — on a merge conflict here, keep our side.
+//
+// CI stamps APP_BUILD_TIMESTAMP in gradle.properties before building; local
+// builds see the 2000000000000 placeholder and fall back to the current time.
+final long FLOWGRAM_EPOCH_MS = 1767225600000L // 2026-01-01T00:00:00Z
+long buildTimeMs = Long.parseLong(APP_BUILD_TIMESTAMP.toString())
+if (buildTimeMs == 2000000000000L) { // CI placeholder -> local build
+    buildTimeMs = System.currentTimeMillis()
+}
+def verCode = (int) ((buildTimeMs - FLOWGRAM_EPOCH_MS) / 1000L)
+// Human-readable build stamp for the APK file name (Beijing time, no DST).
+def buildStamp = new Date(buildTimeMs).format('yyMMddHHmmss', TimeZone.getTimeZone('Asia/Shanghai'))
 
 
 def officialVer = APP_VERSION_NAME
@@ -292,7 +309,7 @@ android {
     applicationVariants.configureEach { variant ->
         variant.outputs.configureEach { output ->
             String gramName = "Flowgram"
-            String first = String.format("%s-v%s(%s)", gramName, versionName, versionCode)
+            String first = String.format("%s-v%s-%s", gramName, versionName, buildStamp)
             String name = outputFileName.replace("TMessagesProj", first)
             name = name.replace("-release", "")
             outputFileName = name
