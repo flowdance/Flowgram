@@ -19780,9 +19780,6 @@ public class MessagesController extends BaseController implements NotificationCe
                         message.out = true;
                     }
                 }
-                if (message.media != null && message.media.ttl_seconds != 0) {
-                    FileLog.d("[FlowgramKeepOnce] EDIT update arrived mid=" + message.id + " ttl_seconds=" + message.media.ttl_seconds + " photoEmpty=" + (message.media.photo instanceof TLRPC.TL_photoEmpty) + " docEmpty=" + (message.media.document instanceof TLRPC.TL_documentEmpty));
-                }
                 if (!message.out) {
                     long from_id = DialogObject.getPeerDialogId(message.from_id);
                     if (from_id == clientUserId) {
