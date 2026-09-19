@@ -19838,6 +19838,16 @@ public class MessagesController extends BaseController implements NotificationCe
                     message.attachPath = "";
                 }
 
+                // Flowgram fork: a consumed view-once edit arrives with empty
+                // media. Restore the kept local copy BEFORE the MessageObject
+                // is built — its type, contentType, text and thumbs are all
+                // derived at construction time, and restoring only the media
+                // afterwards leaves the published object rendering as the
+                // deleted stub (photo vanishing from the open chat).
+                if (message.dialog_id != 0) {
+                    getMessagesStorage().restoreKeptViewOnceMediaSync(message.dialog_id, message);
+                }
+
                 ImageLoader.saveMessageThumbs(message);
                 AndroidUtilities.runOnUIThread(()-> getSendMessagesHelper().onMessageEdited(message));
 

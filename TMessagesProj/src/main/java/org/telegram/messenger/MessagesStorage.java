@@ -15418,41 +15418,128 @@ public class MessagesStorage extends BaseController {
         });
     }
 
-    // Flowgram fork: if the incoming message carries an empty (consumed)
-    // view-once media while our local database still has the full media,
-    // restore the local copy so the message stays viewable and savable.
-    private void restoreKeptViewOnceMedia(TLRPC.Message message, long dialogId) {
-        if (message == null || message.media == null || message instanceof TLRPC.TL_message_secret || message.id <= 0) {
+    // Flowgram fork: synchronous variant for update-processing threads.
+    // A MessageObject built from an incoming edit derives its state (type,
+    // contentType, messageText, photoThumbs) at construction time, so the
+    // kept local copy must be restored BEFORE the object is built; the
+    // putMessages restore alone runs after construction and would leave the
+    // published object rendering as the deleted stub.
+    //
+    // Cheap checks that need no database run before anything is queued, so
+    // ordinary edits never touch the storage queue. Thread contract:
+    //   - storage thread: runs the read-only loader inline (queueing onto
+    //     itself and waiting would self-deadlock);
+    //   - UI thread: ChatThemeController does call processUpdateArray on the
+    //     UI thread (wallpaper-set response callback), but that response
+    //     wraps the wallpaper service message — the code there handles only
+    //     TL_updateNewMessage with messageActionSetChatWallPaper. Edit
+    //     updates are not an observed input of that entry; if one ever
+    //     arrives there, this branch skips the sync restore (explicitly
+    //     uncovered path) instead of blocking — the async putMessages
+    //     restore still keeps the database correct;
+    //   - other threads: post a read-only loader and wait. DispatchQueue
+    //     .postRunnable awaits internally and swallows InterruptedException
+    //     (clearing the flag), so the caller's interrupt status is captured
+    //     before posting and re-asserted, together with any interrupt that
+    //     lands during the wait, once the wait completes. The wait is
+    //     unbounded and not interruptible-out: bailing early would skip the
+    //     restore and reintroduce the stale-derived-state defect. If posting
+    //     fails (queue looper dead) we return instead of waiting forever.
+    //     The queued task captures only mid/dialogId and never touches the
+    //     message; the media assignment happens on the caller thread after
+    //     the latch, so the message is never mutated across threads.
+    public void restoreKeptViewOnceMediaSync(long dialogId, TLRPC.Message message) {
+        if (!NaConfig.INSTANCE.getKeepViewOnceMedia().Bool() || !isConsumedViewOnceMediaShape(message)) {
             return;
         }
-        TLRPC.MessageMedia media = message.media;
+        final int mid = message.id;
+        TLRPC.MessageMedia restored;
+        if (Thread.currentThread() == storageQueue) {
+            restored = loadKeptViewOnceMedia(mid, dialogId);
+        } else if (Looper.myLooper() == Looper.getMainLooper()) {
+            return;
+        } else {
+            boolean wasInterrupted = Thread.interrupted();
+            final TLRPC.MessageMedia[] holder = new TLRPC.MessageMedia[1];
+            final CountDownLatch latch = new CountDownLatch(1);
+            boolean posted = storageQueue.postRunnable(() -> {
+                try {
+                    holder[0] = loadKeptViewOnceMedia(mid, dialogId);
+                } finally {
+                    latch.countDown();
+                }
+            });
+            if (!posted) {
+                if (wasInterrupted) {
+                    Thread.currentThread().interrupt();
+                }
+                return;
+            }
+            boolean interruptedWhileWaiting = false;
+            while (true) {
+                try {
+                    latch.await();
+                    break;
+                } catch (InterruptedException e) {
+                    interruptedWhileWaiting = true;
+                }
+            }
+            if (wasInterrupted || interruptedWhileWaiting) {
+                Thread.currentThread().interrupt();
+            }
+            restored = holder[0];
+        }
+        if (restored != null) {
+            message.media = restored;
+        }
+    }
+
+    // Flowgram fork: candidate check for kept view-once restoration, decided
+    // without touching the database: true when the incoming message could be
+    // a consumed view-once media report. The consumed update may arrive
+    // with the ttl flag stripped, so "was this view-once media" is NOT
+    // decided here — the stored copy is the authority (loadKeptViewOnceMedia).
+    private static boolean isConsumedViewOnceMediaShape(TLRPC.Message message) {
+        if (message == null || message.id <= 0 || message instanceof TLRPC.TL_message_secret || message.media == null) {
+            return false;
+        }
         // The server reports consumed view-once media in several shapes: the
         // media replaced entirely by messageMediaEmpty, or the photo/document
         // swapped for its empty variant (or nulled), with or without the
         // ttl_seconds flag preserved. Detect them all.
-        boolean empty = media instanceof TLRPC.TL_messageMediaEmpty
+        TLRPC.MessageMedia media = message.media;
+        return media instanceof TLRPC.TL_messageMediaEmpty
                 || (media instanceof TLRPC.TL_messageMediaPhoto && (media.photo == null || media.photo instanceof TLRPC.TL_photoEmpty))
                 || (media instanceof TLRPC.TL_messageMediaDocument && (media.document == null || media.document instanceof TLRPC.TL_documentEmpty));
-        if (!empty) {
-            return;
-        }
+    }
+
+    // Flowgram fork: load the stored full media for a view-once message.
+    // Runs on the storage thread and must not touch the incoming message —
+    // only read the database and return the stored media (or null).
+    private TLRPC.MessageMedia loadKeptViewOnceMedia(int mid, long dialogId) {
         SQLiteCursor cursor = null;
         try {
-            cursor = database.queryFinalized(String.format(Locale.US, "SELECT data FROM messages_v2 WHERE mid = %d AND uid = %d", message.id, dialogId));
+            cursor = database.queryFinalized(String.format(Locale.US, "SELECT data FROM messages_v2 WHERE mid = %d AND uid = %d", mid, dialogId));
             if (cursor.next()) {
                 NativeByteBuffer data = cursor.byteBufferValue(0);
                 if (data != null) {
                     try {
                         TLRPC.Message old = TLRPC.Message.TLdeserialize(data, data.readInt32(false), false);
-                        boolean oldEmpty = old == null || old.media == null
-                                || old.media.photo instanceof TLRPC.TL_photoEmpty
-                                || old.media.document instanceof TLRPC.TL_documentEmpty
-                                || old.media instanceof TLRPC.TL_messageMediaDocument && old.media.document == null;
-                        // Only restore when the stored copy really was a
-                        // view-once/self-destruct message — never fabricate
-                        // media for an ordinary message.
-                        if (!oldEmpty && (old.media.ttl_seconds != 0 || old.ttl != 0)) {
-                            message.media = old.media;
+                        if (old != null && old.media != null && (old.media.ttl_seconds != 0 || old.ttl != 0)) {
+                            TLRPC.MessageMedia oldMedia = old.media;
+                            // Explicit whitelist of valid restorable copies: a
+                            // stored photo media must carry a real photo, a
+                            // document media a real document; any other media
+                            // type is not a valid copy. This validates the
+                            // stored media description only — it does NOT
+                            // prove the original file finished downloading.
+                            boolean validPhoto = oldMedia instanceof TLRPC.TL_messageMediaPhoto
+                                    && oldMedia.photo != null && !(oldMedia.photo instanceof TLRPC.TL_photoEmpty);
+                            boolean validDocument = oldMedia instanceof TLRPC.TL_messageMediaDocument
+                                    && oldMedia.document != null && !(oldMedia.document instanceof TLRPC.TL_documentEmpty);
+                            if (validPhoto || validDocument) {
+                                return oldMedia;
+                            }
                         }
                     } finally {
                         data.reuse();
@@ -15465,6 +15552,21 @@ public class MessagesStorage extends BaseController {
             if (cursor != null) {
                 cursor.dispose();
             }
+        }
+        return null;
+    }
+
+    // Flowgram fork: if the incoming message carries an empty (consumed)
+    // view-once media while our local database still has the full media,
+    // restore the local copy so the message stays viewable and savable.
+    // Runs on the storage thread (called from putMessages).
+    private void restoreKeptViewOnceMedia(TLRPC.Message message, long dialogId) {
+        if (!isConsumedViewOnceMediaShape(message)) {
+            return;
+        }
+        TLRPC.MessageMedia restored = loadKeptViewOnceMedia(message.id, dialogId);
+        if (restored != null) {
+            message.media = restored;
         }
     }
 
