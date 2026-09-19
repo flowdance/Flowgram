@@ -33196,7 +33196,7 @@ public class ChatActivity extends BaseFragment implements
                     }
                 }
 
-                boolean showNoForwards = (isPeerNoForwards() || message.messageOwner.noforwards && currentUser != null && currentUser.bot) && message.messageOwner.action == null && message.isSent() && !message.isEditing() && chatMode != MODE_SCHEDULED && chatMode != MODE_SAVED && getDialogId() != UserObject.VERIFY;
+                boolean showNoForwards = (isPeerNoForwards() || message.messageOwner.noforwards && currentUser != null && currentUser.bot && !NekoXConfig.bypassNoForwards()) && message.messageOwner.action == null && message.isSent() && !message.isEditing() && chatMode != MODE_SCHEDULED && chatMode != MODE_SAVED && getDialogId() != UserObject.VERIFY;
                 scrimPopupContainerLayout.addView(popupLayout, LayoutHelper.createLinearRelatively(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.LEFT, isReactionsAvailable ? 16 : 0, 0, isReactionsAvailable ? 36 : 0, 0));
                 scrimPopupContainerLayout.setPopupWindowLayout(popupLayout);
                 if (showNoForwards) {
@@ -49575,9 +49575,11 @@ public class ChatActivity extends BaseFragment implements
     }
 
     public boolean isPeerNoForwards() {
+        // Flowgram fork: honor the Force Copy / Disable Flag Secure bypass so
+        // restricted chats allow forwarding, copying and saving.
         return currentChat != null ?
-            getMessagesController().isChatNoForwards(currentChat) :
-            getMessagesController().isUserNoForwards(userInfo);
+            getMessagesController().isChatNoForwardsWithOverride(currentChat) :
+            getMessagesController().isUserNoForwardsWithOverride(userInfo);
     }
 
     public boolean isPeerNoForwardsWithOverride() {
