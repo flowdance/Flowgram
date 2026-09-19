@@ -118,6 +118,12 @@ public class NekoXConfig {
                 .apply();
     }
 
+    // Flowgram fork: true when content restrictions (noforwards) should be
+    // bypassed — either the Force Copy or the Disable-Flag-Secure option is on.
+    public static boolean bypassNoForwards() {
+        return NaConfig.INSTANCE.getForceCopy().Bool() || NaConfig.INSTANCE.getDisableFlagSecure().Bool();
+    }
+
     public static boolean isDeveloper() {
         if (hasDeveloper != null)
             return hasDeveloper;

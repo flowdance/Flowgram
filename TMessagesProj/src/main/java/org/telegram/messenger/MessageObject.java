@@ -10000,7 +10000,10 @@ public class MessageObject {
             return false;
         }
         if (message != null && message.media != null && (isVoiceDocument(getDocument(message)) || isRoundVideoMessage(message)) && message.media.ttl_seconds == 0x7FFFFFFF) {
-            return true;
+            // Flowgram fork: keep view-once voice/round messages in normal chats.
+            if (message instanceof TLRPC.TL_message_secret || !NaConfig.INSTANCE.getKeepViewOnceMedia().Bool()) {
+                return true;
+            }
         }
         if (getMedia(message) instanceof TLRPC.TL_messageMediaPaidMedia) {
             return true;
@@ -10011,6 +10014,10 @@ public class MessageObject {
         if (message instanceof TLRPC.TL_message_secret) {
             return (getMedia(message) instanceof TLRPC.TL_messageMediaPhoto || isVideoMessage(message)) && message.ttl > 0 && message.ttl <= 60;
         } else {
+            // Flowgram fork: keep view-once photos/videos in normal chats.
+            if (NaConfig.INSTANCE.getKeepViewOnceMedia().Bool()) {
+                return false;
+            }
             return (getMedia(message) instanceof TLRPC.TL_messageMediaPhoto || getMedia(message) instanceof TLRPC.TL_messageMediaDocument) && getMedia(message).ttl_seconds != 0;
         }
     }
@@ -10056,6 +10063,10 @@ public class MessageObject {
             int ttl = Math.max(messageOwner.ttl, getMedia(messageOwner).ttl_seconds);
             return ttl > 0 && ((getMedia(messageOwner) instanceof TLRPC.TL_messageMediaPhoto || isVideo() || isGif()) && ttl <= 60 || isRoundVideo());
         } else if (messageOwner instanceof TLRPC.TL_message) {
+            // Flowgram fork: optionally treat view-once media as normal media.
+            if (NaConfig.INSTANCE.getKeepViewOnceMedia().Bool()) {
+                return false;
+            }
             return (getMedia(messageOwner) != null && getMedia(messageOwner).ttl_seconds != 0) && (getMedia(messageOwner) instanceof TLRPC.TL_messageMediaPhoto || getMedia(messageOwner) instanceof TLRPC.TL_messageMediaDocument);
         }
         return false;
@@ -10072,6 +10083,11 @@ public class MessageObject {
         if (messageOwner instanceof TLRPC.TL_message_secret) {
             return (((getMedia(messageOwner) instanceof TLRPC.TL_messageMediaPhoto) || isGif()) && messageOwner.ttl > 0 && messageOwner.ttl <= 60 || isVoice() || isRoundVideo() || isVideo());
         } else if (messageOwner instanceof TLRPC.TL_message) {
+            // Flowgram fork: optionally treat view-once media as normal media,
+            // so it never self-destructs and stays savable.
+            if (NaConfig.INSTANCE.getKeepViewOnceMedia().Bool()) {
+                return false;
+            }
             return (getMedia(messageOwner) != null && getMedia(messageOwner).ttl_seconds != 0) && (getMedia(messageOwner) instanceof TLRPC.TL_messageMediaPhoto || getMedia(messageOwner) instanceof TLRPC.TL_messageMediaDocument);
         }
         return false;

@@ -76,6 +76,7 @@
     <string name="CustomPoorHint">Default pool</string>
     <string name="CustomEditedMessage">Custom Edited Message word</string>
     <string name="KeepDeletedMessages">Keep deleted messages</string>
+    <string name="KeepViewOnceMedia">Keep view-once media</string>
     <string name="DeletedMessage">deleted</string>
     <string name="FakeHighPerformanceDevice">Fake High Performance Device</string>
     <string name="DisableEmojiDrawLimit">Disable Emoji Draw Limit</string>

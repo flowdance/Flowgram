@@ -341,6 +341,12 @@ object NaConfig {
             ConfigItem.configTypeBool,
             false
         )
+    val keepViewOnceMedia =
+        addConfig(
+            "KeepViewOnceMedia",
+            ConfigItem.configTypeBool,
+            false
+        )
     val disableProxyWhenVpnEnabled =
         addConfig(
             "DisableProxyWhenVpnEnabled",
