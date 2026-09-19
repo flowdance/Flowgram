@@ -217,7 +217,20 @@ jobs:
           sed -i "s/2000000000000/$(date +%s%N | cut -c1-13)/g" gradle.properties
           echo "sdk.dir=${ANDROID_HOME}" >> local.properties
       - name: Restore keystore
-        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > TMessagesProj/release.keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          LOCAL_PROPERTIES: ${{ secrets.LOCAL_PROPERTIES }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::secret KEYSTORE_BASE64 is not set"
+            exit 1
+          fi
+          if [ -z "$LOCAL_PROPERTIES" ]; then
+            echo "::error::secret LOCAL_PROPERTIES is not set (must carry KEYSTORE_PASS/ALIAS_NAME/ALIAS_PASS)"
+            exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > TMessagesProj/release.keystore
+          test -s TMessagesProj/release.keystore
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
         with:
