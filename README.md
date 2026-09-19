@@ -33,6 +33,13 @@ embedded in the APK file name instead (Beijing time, `Asia/Shanghai`), e.g.
 **Merge rule:** on a conflict in `TMessagesProj/build.gradle` around
 `verCode`, keep our side.
 
+**Signing:** the APK is signed with the Flowgram keystore (injected via the
+CI secrets `KEYSTORE_BASE64` / `LOCAL_PROPERTIES`).
+`TMessagesProj/jni/integrity/integrity.cpp` hardcodes the SHA1 fingerprint
+of that signing certificate and refuses to boot native code if it does not
+match — if you ever rotate the signing key, update that hash too, or the app
+will hang at startup.
+
 ## Additional feature over Nagram
 
 1. Nice icon (copyright © MaitungTM)

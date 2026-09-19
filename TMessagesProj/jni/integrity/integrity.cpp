@@ -3,7 +3,13 @@
 #include "read_cert.h"
 #include "SHA1.h"
 
-static const char *SIGN = "3A0F57FE06485D0B90D0ACD990E3A30328E3988D";
+// Flowgram fork: SHA1 fingerprint of THIS fork's signing certificate
+// (net.flowdance.tg, keystore injected via CI's KEYSTORE_BASE64 secret).
+// Must be regenerated if the signing key is ever rotated:
+//   openssl pkcs12 -in release.keystore -clcerts -nokeys | \
+//     openssl x509 -outform DER | sha1sum   (uppercase, no colons)
+// On a merge conflict here, keep our value.
+static const char *SIGN = "8438CC3FFB0C55A8499F4B12A54ACC00F4E3D99D";
 
 extern "C" {
 int verifySign(JNIEnv *env) {
