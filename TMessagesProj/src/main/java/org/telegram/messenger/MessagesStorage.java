@@ -14339,7 +14339,9 @@ public class MessagesStorage extends BaseController {
                     }
                     arrayList.add(cursor.intValue(0));
                 }
-                if (arrayList != null) {
+                if (arrayList != null && !NaConfig.INSTANCE.getKeepViewOnceMedia().Bool()) {
+                    // Flowgram fork: keep view-once media locally instead of
+                    // emptying it when the server confirms the content was read.
                     emptyMessagesMedia(dialogId, arrayList);
                 }
                 cursor.dispose();
