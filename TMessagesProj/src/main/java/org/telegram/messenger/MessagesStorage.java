@@ -80,6 +80,7 @@ import me.vkryl.core.BitwiseUtils;
 import cn.hutool.core.util.NumberUtil;
 import cn.hutool.core.util.StrUtil;
 import tw.nekomimi.nekogram.NekoConfig;
+import xyz.nextalone.nagram.NaConfig;
 import tw.nekomimi.nekogram.database.ObjectBoxKt;
 
 public class MessagesStorage extends BaseController {
@@ -15415,6 +15416,49 @@ public class MessagesStorage extends BaseController {
         });
     }
 
+    // Flowgram fork: if the incoming message carries an empty (consumed)
+    // view-once media while our local database still has the full media,
+    // restore the local copy so the message stays viewable and savable.
+    private void restoreKeptViewOnceMedia(TLRPC.Message message, long dialogId) {
+        if (message == null || message.media == null || message.media.ttl_seconds == 0 ||
+                message instanceof TLRPC.TL_message_secret || message.id <= 0) {
+            return;
+        }
+        TLRPC.MessageMedia media = message.media;
+        boolean empty = media.photo instanceof TLRPC.TL_photoEmpty
+                || media.document instanceof TLRPC.TL_documentEmpty
+                || media instanceof TLRPC.TL_messageMediaDocument && media.document == null;
+        if (!empty) {
+            return;
+        }
+        SQLiteCursor cursor = null;
+        try {
+            cursor = database.queryFinalized(String.format(Locale.US, "SELECT data FROM messages_v2 WHERE mid = %d AND uid = %d", message.id, dialogId));
+            if (cursor.next()) {
+                NativeByteBuffer data = cursor.byteBufferValue(0);
+                if (data != null) {
+                    try {
+                        TLRPC.Message old = TLRPC.Message.TLdeserialize(data, data.readInt32(false), false);
+                        if (old != null && old.media != null &&
+                                !(old.media.photo instanceof TLRPC.TL_photoEmpty) &&
+                                !(old.media.document instanceof TLRPC.TL_documentEmpty) &&
+                                !(old.media instanceof TLRPC.TL_messageMediaDocument && old.media.document == null)) {
+                            message.media = old.media;
+                        }
+                    } finally {
+                        data.reuse();
+                    }
+                }
+            }
+        } catch (Exception e) {
+            checkSQLException(e);
+        } finally {
+            if (cursor != null) {
+                cursor.dispose();
+            }
+        }
+    }
+
     private void collectKeptDeletedUpdates(SQLiteCursor cursor, ArrayList<Object[]> updates) throws Exception {
         while (cursor.next()) {
             long uid = cursor.longValue(0);
@@ -16205,6 +16249,15 @@ public class MessagesStorage extends BaseController {
             SQLiteCursor cursor = null;
             try {
                 final long selfId = getUserConfig().getClientUserId();
+                // Flowgram fork: keep locally stored view-once media when the
+                // server reports it consumed — an incoming message arriving
+                // with an empty photo/document for a ttl message (edit or
+                // history reload) must not wipe our local copy.
+                if (NaConfig.INSTANCE.getKeepViewOnceMedia().Bool()) {
+                    for (int a = 0, N = messages.messages.size(); a < N; a++) {
+                        restoreKeptViewOnceMedia(messages.messages.get(a), dialogId);
+                    }
+                }
                 final boolean scheduled = mode == ChatActivity.MODE_SCHEDULED;
                 final boolean quickReplies = mode == ChatActivity.MODE_QUICK_REPLIES;
                 final boolean welcomeMessages = mode == ChatActivity.MODE_WELCOME_MESSAGES;
