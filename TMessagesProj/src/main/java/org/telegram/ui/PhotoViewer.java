@@ -17336,6 +17336,14 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                     ImageLocation imageThumbLocation = placeHolder == null ? ImageLocation.getForObject(thumbLocation, photoObject) : null;
                     BitmapDrawable thumbPlaceHolder = placeHolder != null ? new BitmapDrawable(placeHolder.bitmap) : null;
                     int cacheType = cacheOnly ? 1 : 0;
+                    // Flowgram fork: view-once media in normal chats always
+                    // resolves to the cache directory (FileLoader forces ttl
+                    // media there), so the viewer must look in the same place
+                    // instead of the images dir, otherwise the file never
+                    // resolves and the viewer spins forever.
+                    if (!cacheOnly && messageObject != null && !(messageObject.messageOwner instanceof TLRPC.TL_message_secret) && MessageObject.getMedia(messageObject.messageOwner) != null && MessageObject.getMedia(messageObject.messageOwner).ttl_seconds != 0) {
+                        cacheType = 1;
+                    }
                     ImageLocation fullImage = needFullImage ? imageLocation : null;
                     imageReceiver.setImage(fullImage, filter, imageThumbLocation, "b", thumbPlaceHolder, size[0], null, parentObject, cacheType);
                     imageReceiver.setMark(needFullImage ? null : MARK_DEFERRED_IMAGE_LOADING);

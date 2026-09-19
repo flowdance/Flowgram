@@ -16344,6 +16344,19 @@ public class ChatActivity extends BaseFragment implements
         }
     }
 
+    // Flowgram fork: send the "viewed" receipt for a kept view-once message
+    // without arming the self-destruct timer.
+    private void sendViewOnceReadReceipt(MessageObject messageObject) {
+        if (messageObject == null || messageObject.isOut() || !(messageObject.messageOwner instanceof TLRPC.TL_message)) {
+            return;
+        }
+        TLRPC.MessageMedia media = MessageObject.getMedia(messageObject.messageOwner);
+        if (media == null || media.ttl_seconds == 0 || !messageObject.messageOwner.media_unread) {
+            return;
+        }
+        getMessagesController().markMessageAsRead2(dialog_id, messageObject.getId(), null, 0, 0, false);
+    }
+
     private Runnable sendSecretMediaDelete(MessageObject messageObject) {
         if (messageObject == null || messageObject.isOut() || !messageObject.isSecretMedia() || messageObject.messageOwner.ttl != 0x7FFFFFFF) {
             return null;
@@ -37932,6 +37945,8 @@ public class ChatActivity extends BaseFragment implements
         if (message.isVideo()) {
             sendSecretMessageRead(message, true);
         }
+        // Flowgram fork: notify the sender that kept view-once media was viewed.
+        sendViewOnceReadReceipt(message);
         PhotoViewer.getInstance().setParentActivity(this, themeDelegate);
         MessageObject playingObject = MediaController.getInstance().getPlayingMessageObject();
         if (cell != null && playingObject != null && playingObject.isVideo()) {
