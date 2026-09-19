@@ -386,6 +386,7 @@
     <string name="SwitchStyleTelegram">Telegram</string>
     <string name="SwitchStyleModern">现代</string>
     <string name="DisableChatListSwipeGesture">禁用主页聊天列表滑动手势</string>
+    <string name="DisableSwipeHideGeneralTopic">禁止左滑隐藏主话题</string>
     <string name="ViewOnceBadge">查看一次</string>
     <string name="SelfDestructBadge">%d 秒自毁</string>
 </resources>

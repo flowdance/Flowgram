@@ -1418,6 +1418,12 @@ object NaConfig {
             ConfigItem.configTypeBool,
             false
         )
+    val disableSwipeHideGeneralTopic =
+        addConfig(
+            "DisableSwipeHideGeneralTopic",
+            ConfigItem.configTypeBool,
+            false
+        )
 
     private fun addConfig(
         k: String,

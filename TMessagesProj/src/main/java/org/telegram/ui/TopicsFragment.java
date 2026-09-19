@@ -148,6 +148,7 @@ import java.util.concurrent.CountDownLatch;
 
 import tw.nekomimi.nekogram.BackButtonMenuRecent;
 import tw.nekomimi.nekogram.NekoConfig;
+import xyz.nextalone.nagram.NaConfig;
 
 public class TopicsFragment extends BaseFragment implements NotificationCenter.NotificationCenterDelegate, ChatActivityInterface, RightSlidingDialogContainer.BaseFragmentWithFullscreen, MainTabsActivity.TabFragmentDelegate {
 
@@ -1836,7 +1837,17 @@ public class TopicsFragment extends BaseFragment implements NotificationCenter.N
                         if (itemTouchHelperCallback.currentItemViewHolder != null) {
                             ViewHolder viewHolder = itemTouchHelperCallback.currentItemViewHolder;
                             if (viewHolder.itemView instanceof DialogCell) {
-                                setArchiveHidden(!hiddenShown, (DialogCell) viewHolder.itemView);
+                                DialogCell archiveCell = (DialogCell) viewHolder.itemView;
+                                // Flowgram fork: never issue the hide request for a
+                                // visible General topic when the swipe-lock option
+                                // is on. swipeFolderBack is already set above, so an
+                                // in-flight item snaps back cleanly instead of
+                                // being left half-swiped.
+                                if (!(NaConfig.INSTANCE.getDisableSwipeHideGeneralTopic().Bool()
+                                        && archiveCell.forumTopic != null && archiveCell.forumTopic.id == 1
+                                        && !archiveCell.forumTopic.hidden)) {
+                                    setArchiveHidden(!hiddenShown, archiveCell);
+                                }
                             }
                         }
                     }
@@ -2467,6 +2478,18 @@ public class TopicsFragment extends BaseFragment implements NotificationCenter.N
             }
             TLRPC.TL_forumTopic topic = forumTopics.get(position).topic;
             if (selectedTopics.isEmpty() && viewHolder.itemView instanceof TopicDialogCell && topic.id == 1) {
+                // Flowgram fork: optionally forbid hiding the General topic
+                // by swiping left. Blocked at the gesture-recognition stage,
+                // so the item never starts sliding — no snap-back animation
+                // and no hide request can be issued downstream (onSwiped and
+                // the ACTION_UP setArchiveHidden path stay inert because
+                // swipingFolder is never armed). A currently hidden General
+                // topic remains swipeable (the swipe restores it), and the
+                // hide/show menu toggle keeps working either way.
+                if (NaConfig.INSTANCE.getDisableSwipeHideGeneralTopic().Bool() && !topic.hidden) {
+                    swipingFolder = false;
+                    return makeMovementFlags(0, 0);
+                }
                 TopicDialogCell dialogCell = (TopicDialogCell) viewHolder.itemView;
                 swipeFolderBack = false;
                 swipingFolder = true;
