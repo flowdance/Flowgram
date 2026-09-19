@@ -22,7 +22,7 @@
     <string name="SendReactions">Verstuur reacties</string>
     <string name="ShowReactions">Toon reacties</string>
     <string name="CustomTitle">Aangepaste titel</string>
-    <string name="CustomTitleHint">Laat leeg om Nagram te gebruiken</string>
+    <string name="CustomTitleHint">Laat leeg om Flowgram te gebruiken</string>
     <string name="CodeSyntaxHighlight">Syntaxis code benadrukken</string>
     <string name="CreateMono">Maak Monospace</string>
     <string name="CreateMonoLanguage">Taal code</string>

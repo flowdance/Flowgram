@@ -22,7 +22,7 @@
     <string name="SendReactions">Trimite reactii</string>
     <string name="ShowReactions">Arată reacțiile</string>
     <string name="CustomTitle">Titlu personalizat</string>
-    <string name="CustomTitleHint">Lăsați necompletat pentru a utiliza Nagram</string>
+    <string name="CustomTitleHint">Lăsați necompletat pentru a utiliza Flowgram</string>
     <string name="CodeSyntaxHighlight">Evidențiere sintaxă cod</string>
     <string name="CreateMono">Creează Monospace</string>
     <string name="CreateMonoLanguage">Limbă cod</string>

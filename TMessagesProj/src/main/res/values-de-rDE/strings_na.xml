@@ -22,7 +22,7 @@
     <string name="SendReactions">Reaktionen senden</string>
     <string name="ShowReactions">Reaktionen anzeigen</string>
     <string name="CustomTitle">Eigener Titel</string>
-    <string name="CustomTitleHint">Leer lassen, um Nagram zu verwenden</string>
+    <string name="CustomTitleHint">Leer lassen, um Flowgram zu verwenden</string>
     <string name="CodeSyntaxHighlight">Code-Syntax hervorheben</string>
     <string name="CreateMono">Monospace erstellen</string>
     <string name="CreateMonoLanguage">Code-Sprache</string>
@@ -95,7 +95,7 @@
     <string name="ShowForumAsNormalChat">Forum als normaler Chat anzeigen</string>
     <string name="DecorationNone">Keine</string>
     <string name="ChatDecoration">Chat-Dekoration</string>
-    <string name="NeedChangeNekoSettings">Du musst die Nagram Einstellungen ändern</string>
+    <string name="NeedChangeNekoSettings">Du musst die Flowgram Einstellungen ändern</string>
     <string name="DoNotUnarchiveBySwipe">Nicht durch Wischen entarchivieren</string>
     <string name="DoNotShareMyPhoneNumber">Meine Telefonnummer nicht teilen</string>
     <string name="DefaultDeleteMenu">Standard-Menü löschen</string>

@@ -170,7 +170,7 @@
     <string name="DisableDeveloperMode">Matikan Mode Pengembang</string>
     <string name="DeveloperSettings">Pengaturan Pengembang</string>
     <string name="LoginSettings">Pengaturan Login</string>
-    <string name="NekoXFaq">FAQ Nagram</string>
+    <string name="NekoXFaq">FAQ Flowgram</string>
     <string name="TransSite">Platform Penterjemah</string>
     <string name="OpenKayChain">Klien OpenPGP</string>
     <string name="OpenPGPApp">Penyedia OpenPGP</string>
@@ -252,7 +252,7 @@
     <string name="VersionUpdateTitle">Tersedia Versi Baru</string>
     <string name="AutoCheckUpdatePreview">Pratinjau (Tidak stabil)</string>
     <string name="rememberAllBackMessages">Ingat semua balasan yang diklik</string>
-    <string name="AppUpdateNekoX">Perbarui Nagram</string>
+    <string name="AppUpdateNekoX">Perbarui Flowgram</string>
     <string name="NekoXUpdateTranslationHint">Tekan untuk menterjemahkan log perubahan</string>
     <string name="repeatConfirm">Tanya sebelum mengulang</string>
     <string name="useCustomEmojiInvalid">Bukan zip emoji yang valid.</string>

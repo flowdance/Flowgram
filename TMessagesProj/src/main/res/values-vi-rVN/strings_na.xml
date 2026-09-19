@@ -22,7 +22,7 @@
     <string name="SendReactions">Gửi phản hồi biểu tượng cảm xúc</string>
     <string name="ShowReactions">Hiển thị trình đơn phản hồi biểu tượng cảm xúc</string>
     <string name="CustomTitle">Tùy chỉnh tiêu đề</string>
-    <string name="CustomTitleHint">Để trống để sử dụng Nagram</string>
+    <string name="CustomTitleHint">Để trống để sử dụng Flowgram</string>
     <string name="CodeSyntaxHighlight">Làm nổi bật mã cú pháp</string>
     <string name="CreateMono">Tạo phông chữ đơn cách</string>
     <string name="CreateMonoLanguage">Mã ngôn ngữ</string>

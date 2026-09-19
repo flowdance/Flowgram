@@ -22,7 +22,7 @@
     <string name="SendReactions">Αποστολή Αντιδράσεων</string>
     <string name="ShowReactions">Εμφάνιση Αντιδράσεων</string>
     <string name="CustomTitle">Προσαρμοσμένος Τίτλος</string>
-    <string name="CustomTitleHint">Αφήστε κενό για χρήση Nagram</string>
+    <string name="CustomTitleHint">Αφήστε κενό για χρήση Flowgram</string>
     <string name="CodeSyntaxHighlight">Επισήμανση σύνταξης κώδικα</string>
     <string name="CreateMono">Δημιουργία Monospace</string>
     <string name="CreateMonoLanguage">Κωδικός γλώσσας</string>

@@ -20,7 +20,7 @@
     <string name="ShowReactions">Tepkileri Göster</string>
     <string name="ScrollableChatPreview">Kaydırılabilir Sohbet Önizlemesi</string>
     <string name="CustomTitle">Özel Başlık</string>
-    <string name="CustomTitleHint">Nagram\'ı kullanmak için boş bırakın</string>
+    <string name="CustomTitleHint">Flowgram\'ı kullanmak için boş bırakın</string>
     <string name="CodeSyntaxHighlight">Kod sözdizimi vurgulaması</string>
     <string name="CreateMono">Create Monospace</string>
     <string name="CreateMonoLanguage">Kod dili</string>

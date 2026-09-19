@@ -22,7 +22,7 @@
     <string name="SendReactions">Send reaksjoner</string>
     <string name="ShowReactions">Vis Reaksjoner</string>
     <string name="CustomTitle">Tilpasset tittel</string>
-    <string name="CustomTitleHint">La stå tomt for å bruke Nagram</string>
+    <string name="CustomTitleHint">La stå tomt for å bruke Flowgram</string>
     <string name="CodeSyntaxHighlight">Fremheving av kode syntaks</string>
     <string name="CreateMono">Opprett monospace</string>
     <string name="CreateMonoLanguage">Kode språk</string>

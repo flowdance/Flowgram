@@ -22,7 +22,7 @@
     <string name="SendReactions">Enviar reacciones</string>
     <string name="ShowReactions">Mostrar reacciones</string>
     <string name="CustomTitle">Título personalizado</string>
-    <string name="CustomTitleHint">Dejar en blanco para usar Nagram</string>
+    <string name="CustomTitleHint">Dejar en blanco para usar Flowgram</string>
     <string name="CodeSyntaxHighlight">Resaltar la sintaxis del código</string>
     <string name="CreateMono">Crear monoespaciado</string>
     <string name="CreateMonoLanguage">Lenguaje de código</string>

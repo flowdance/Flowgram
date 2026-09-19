@@ -22,7 +22,7 @@
     <string name="SendReactions">Отправить реакцию</string>
     <string name="ShowReactions">Показать реакции</string>
     <string name="CustomTitle">Пользовательский заголовок</string>
-    <string name="CustomTitleHint">Оставьте поле пустым, чтобы использовать «Nagram»</string>
+    <string name="CustomTitleHint">Оставьте поле пустым, чтобы использовать «Flowgram»</string>
     <string name="CodeSyntaxHighlight">Подсветка синтаксиса кода</string>
     <string name="CreateMono">Создать моноширинный</string>
     <string name="CreateMonoLanguage">Язык кода</string>

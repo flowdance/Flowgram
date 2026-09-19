@@ -22,7 +22,7 @@
     <string name="SendReactions">リアクションを送信</string>
     <string name="ShowReactions">リアクションの表示</string>
     <string name="CustomTitle">カスタムタイトル</string>
-    <string name="CustomTitleHint">Nagramを使用するには空白のままにしてください</string>
+    <string name="CustomTitleHint">Flowgramを使用するには空白のままにしてください</string>
     <string name="CodeSyntaxHighlight">コードの構文ハイライト</string>
     <string name="CreateMono">Monospaceを作成</string>
     <string name="CreateMonoLanguage">コード言語</string>

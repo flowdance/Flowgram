@@ -22,7 +22,7 @@
     <string name="SendReactions">表情回應</string>
     <string name="ShowReactions">顯示表情回應選單</string>
     <string name="CustomTitle">自訂標題</string>
-    <string name="CustomTitleHint">留空則使用 Nagram</string>
+    <string name="CustomTitleHint">留空則使用 Flowgram</string>
     <string name="CodeSyntaxHighlight">程式碼語法高亮</string>
     <string name="CreateMono">建立等寬</string>
     <string name="CreateMonoLanguage">等寬語言</string>

@@ -22,7 +22,7 @@
     <string name="SendReactions">Lähetä Reaktioita</string>
     <string name="ShowReactions">Näytä Reaktiot</string>
     <string name="CustomTitle">Oma Otsikko</string>
-    <string name="CustomTitleHint">Jätä tyhjäksi käyttääksesi Nagramia</string>
+    <string name="CustomTitleHint">Jätä tyhjäksi käyttääksesi Flowgramia</string>
     <string name="CodeSyntaxHighlight">Koodin syntaksin korostus</string>
     <string name="CreateMono">Luo Monospace</string>
     <string name="CreateMonoLanguage">Koodin kieli</string>
