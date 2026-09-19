@@ -16346,6 +16346,17 @@ public class ChatActivity extends BaseFragment implements
 
     // Flowgram fork: send the "viewed" receipt for a kept view-once message
     // without arming the self-destruct timer.
+    private final HashSet<Integer> sentViewOnceReceipts = new HashSet<>();
+
+    // Flowgram fork: called by the photo viewer when a kept view-once message
+    // is actually displayed (file already local or finished loading). The
+    // receipt is deferred until then because the server invalidates the file
+    // reference of consumed view-once media, which would break an in-flight
+    // download.
+    public void onKeptViewOnceMediaShown(MessageObject messageObject) {
+        sendViewOnceReadReceipt(messageObject);
+    }
+
     private void sendViewOnceReadReceipt(MessageObject messageObject) {
         if (messageObject == null || messageObject.isOut() || !(messageObject.messageOwner instanceof TLRPC.TL_message)) {
             return;
@@ -16353,6 +16364,9 @@ public class ChatActivity extends BaseFragment implements
         TLRPC.MessageMedia media = MessageObject.getMedia(messageObject.messageOwner);
         if (media == null || media.ttl_seconds == 0 || !messageObject.messageOwner.media_unread) {
             FileLog.d("[FlowgramKeepOnce] sendViewOnceReadReceipt SKIP mid=" + messageObject.getId() + " ttl_seconds=" + (media == null ? 0 : media.ttl_seconds) + " media_unread=" + messageObject.messageOwner.media_unread);
+            return;
+        }
+        if (!sentViewOnceReceipts.add((int) (dialog_id ^ messageObject.getId()))) {
             return;
         }
         FileLog.d("[FlowgramKeepOnce] sendViewOnceReadReceipt SENDING mid=" + messageObject.getId());
@@ -37948,8 +37962,6 @@ public class ChatActivity extends BaseFragment implements
         if (message.isVideo()) {
             sendSecretMessageRead(message, true);
         }
-        // Flowgram fork: notify the sender that kept view-once media was viewed.
-        sendViewOnceReadReceipt(message);
         PhotoViewer.getInstance().setParentActivity(this, themeDelegate);
         MessageObject playingObject = MediaController.getInstance().getPlayingMessageObject();
         if (cell != null && playingObject != null && playingObject.isVideo()) {

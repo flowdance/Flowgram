@@ -8,6 +8,7 @@
 
 package org.telegram.messenger;
 
+import xyz.nextalone.nagram.NaConfig;
 import android.text.TextUtils;
 import android.util.SparseArray;
 
@@ -1299,14 +1300,19 @@ public class FileLoader extends BaseController {
                 }
             }
         } else {
+            // Flowgram fork: kept view-once media resolves to the same
+            // directory as regular photos, otherwise the viewer, the chat cell
+            // and the save path disagree on where the file lives.
+            boolean ttlCache = MessageObject.getMedia(message) != null && MessageObject.getMedia(message).ttl_seconds != 0 &&
+                    !(message instanceof TLRPC.TL_message_secret) && !NaConfig.INSTANCE.getKeepViewOnceMedia().Bool();
             if (MessageObject.getMedia(message) instanceof TLRPC.TL_messageMediaDocument) {
-                return getPathToAttach(MessageObject.getMedia(message).document, null, forceCache || MessageObject.getMedia(message).ttl_seconds != 0, useFileDatabaseQueue);
+                return getPathToAttach(MessageObject.getMedia(message).document, null, forceCache || ttlCache, useFileDatabaseQueue);
             } else if (MessageObject.getMedia(message) instanceof TLRPC.TL_messageMediaPhoto) {
                 ArrayList<TLRPC.PhotoSize> sizes = MessageObject.getMedia(message).photo.sizes;
                 if (sizes.size() > 0) {
                     TLRPC.PhotoSize sizeFull = getClosestPhotoSizeWithSize(sizes, AndroidUtilities.getPhotoSize(true), false, null, true);
                     if (sizeFull != null) {
-                        return getPathToAttach(sizeFull, null, forceCache || MessageObject.getMedia(message).ttl_seconds != 0, useFileDatabaseQueue);
+                        return getPathToAttach(sizeFull, null, forceCache || ttlCache, useFileDatabaseQueue);
                     }
                 }
             } else if (MessageObject.getMedia(message) instanceof TLRPC.TL_messageMediaWebPage) {

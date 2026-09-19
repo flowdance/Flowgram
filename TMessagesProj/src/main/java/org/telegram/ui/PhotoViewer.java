@@ -4240,6 +4240,10 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                     boolean animated = a == 0 || a == 1 && sideImage == rightImage || a == 2 && sideImage == leftImage;
                     photoProgressViews[a].setProgress(1.0f, animated);
                     checkProgress(a, false, animated);
+                    // Flowgram fork: the kept view-once media finished loading.
+                    if (a == 0 && currentMessageObject != null && parentChatActivity != null) {
+                        parentChatActivity.onKeptViewOnceMediaShown(currentMessageObject);
+                    }
                     if (videoPlayer == null && a == 0 && (currentMessageObject != null && currentMessageObject.isVideo() || currentBotInlineResult != null && (currentBotInlineResult.type.equals("video") || MessageObject.isVideoDocument(currentBotInlineResult.document)) || pageBlocksAdapter != null && (pageBlocksAdapter.isVideo(currentIndex) || pageBlocksAdapter.isHardwarePlayer(currentIndex)))) {
                         onActionClick(false);
                     }
@@ -16903,6 +16907,12 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                 boolean existsFinal = exists;
                 File finalF2Local = f2Local;
                 AndroidUtilities.runOnUIThread(() -> {
+                    // Flowgram fork: a kept view-once photo/video is actually
+                    // displayed now (file is local) — let the chat activity
+                    // send the viewed receipt.
+                    if (a == 0 && existsFinal && messageObjectFinal != null && parentChatActivity != null) {
+                        parentChatActivity.onKeptViewOnceMediaShown(messageObjectFinal);
+                    }
                     if (shownControlsByEnd && !actionBarWasShownBeforeByEnd && isPlaying) {
                         photoProgressViews[a].setBackgroundState(PROGRESS_PLAY, false, false);
                         return;
@@ -17336,14 +17346,6 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                     ImageLocation imageThumbLocation = placeHolder == null ? ImageLocation.getForObject(thumbLocation, photoObject) : null;
                     BitmapDrawable thumbPlaceHolder = placeHolder != null ? new BitmapDrawable(placeHolder.bitmap) : null;
                     int cacheType = cacheOnly ? 1 : 0;
-                    // Flowgram fork: view-once media in normal chats always
-                    // resolves to the cache directory (FileLoader forces ttl
-                    // media there), so the viewer must look in the same place
-                    // instead of the images dir, otherwise the file never
-                    // resolves and the viewer spins forever.
-                    if (!cacheOnly && messageObject != null && !(messageObject.messageOwner instanceof TLRPC.TL_message_secret) && MessageObject.getMedia(messageObject.messageOwner) != null && MessageObject.getMedia(messageObject.messageOwner).ttl_seconds != 0) {
-                        cacheType = 1;
-                    }
                     ImageLocation fullImage = needFullImage ? imageLocation : null;
                     imageReceiver.setImage(fullImage, filter, imageThumbLocation, "b", thumbPlaceHolder, size[0], null, parentObject, cacheType);
                     imageReceiver.setMark(needFullImage ? null : MARK_DEFERRED_IMAGE_LOADING);
