@@ -15422,14 +15422,17 @@ public class MessagesStorage extends BaseController {
     // view-once media while our local database still has the full media,
     // restore the local copy so the message stays viewable and savable.
     private void restoreKeptViewOnceMedia(TLRPC.Message message, long dialogId) {
-        if (message == null || message.media == null || message.media.ttl_seconds == 0 ||
-                message instanceof TLRPC.TL_message_secret || message.id <= 0) {
+        if (message == null || message.media == null || message instanceof TLRPC.TL_message_secret || message.id <= 0) {
             return;
         }
         TLRPC.MessageMedia media = message.media;
-        boolean empty = media.photo instanceof TLRPC.TL_photoEmpty
-                || media.document instanceof TLRPC.TL_documentEmpty
-                || media instanceof TLRPC.TL_messageMediaDocument && media.document == null;
+        // The server reports consumed view-once media in several shapes: the
+        // media replaced entirely by messageMediaEmpty, or the photo/document
+        // swapped for its empty variant (or nulled), with or without the
+        // ttl_seconds flag preserved. Detect them all.
+        boolean empty = media instanceof TLRPC.TL_messageMediaEmpty
+                || (media instanceof TLRPC.TL_messageMediaPhoto && (media.photo == null || media.photo instanceof TLRPC.TL_photoEmpty))
+                || (media instanceof TLRPC.TL_messageMediaDocument && (media.document == null || media.document instanceof TLRPC.TL_documentEmpty));
         if (!empty) {
             return;
         }
@@ -15441,10 +15444,14 @@ public class MessagesStorage extends BaseController {
                 if (data != null) {
                     try {
                         TLRPC.Message old = TLRPC.Message.TLdeserialize(data, data.readInt32(false), false);
-                        if (old != null && old.media != null &&
-                                !(old.media.photo instanceof TLRPC.TL_photoEmpty) &&
-                                !(old.media.document instanceof TLRPC.TL_documentEmpty) &&
-                                !(old.media instanceof TLRPC.TL_messageMediaDocument && old.media.document == null)) {
+                        boolean oldEmpty = old == null || old.media == null
+                                || old.media.photo instanceof TLRPC.TL_photoEmpty
+                                || old.media.document instanceof TLRPC.TL_documentEmpty
+                                || old.media instanceof TLRPC.TL_messageMediaDocument && old.media.document == null;
+                        // Only restore when the stored copy really was a
+                        // view-once/self-destruct message — never fabricate
+                        // media for an ordinary message.
+                        if (!oldEmpty && (old.media.ttl_seconds != 0 || old.ttl != 0)) {
                             message.media = old.media;
                         }
                     } finally {
