@@ -14877,6 +14877,16 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                         subtitle = String.format(Locale.US, "%s, DC%d", subtitle, newMessageObject.messageOwner.media.photo.dc_id);
                     }
                 }
+                // Flowgram fork: mark kept view-once media in the subtitle.
+                if (NaConfig.INSTANCE.getKeepViewOnceMedia().Bool() && !DialogObject.isEncryptedDialog(newMessageObject.getDialogId()) && !(newMessageObject.messageOwner instanceof TLRPC.TL_message_secret)) {
+                    TLRPC.MessageMedia badgeMedia = MessageObject.getMedia(newMessageObject.messageOwner);
+                    if (badgeMedia != null && badgeMedia.ttl_seconds != 0) {
+                        String badgeText = newMessageObject.messageOwner.ttl == 0x7FFFFFFF || badgeMedia.ttl_seconds == 0x7FFFFFFF
+                                ? LocaleController.getString(R.string.ViewOnceBadge)
+                                : LocaleController.formatString(R.string.SelfDestructBadge, badgeMedia.ttl_seconds);
+                        subtitle = (subtitle == null ? "" : subtitle + " · ") + badgeText;
+                    }
+                }
             }
             actionBarContainer.setSubtitle(subtitle, animated);
 

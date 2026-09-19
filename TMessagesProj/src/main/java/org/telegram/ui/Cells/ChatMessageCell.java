@@ -29503,6 +29503,53 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
         );
     }
 
+    // Flowgram fork: with the keep-view-once option the official single-view
+    // placeholder is replaced by the real media, which makes self-destructing
+    // photos indistinguishable from regular ones. Draw a small badge on the
+    // bubble to keep that information visible.
+    private static TextPaint keptViewOnceBadgePaint;
+    private static Paint keptViewOnceBadgeBgPaint;
+    private static final RectF keptViewOnceBadgeRect = new RectF();
+
+    private void drawKeptViewOnceBadge(Canvas canvas) {
+        if (!NaConfig.INSTANCE.getKeepViewOnceMedia().Bool() || !drawPhotoImage || currentMessageObject == null || currentMessageObject.messageOwner == null || currentMessageObject.messageOwner instanceof TLRPC.TL_message_secret) {
+            return;
+        }
+        TLRPC.MessageMedia media = MessageObject.getMedia(currentMessageObject.messageOwner);
+        if (media == null || media.ttl_seconds == 0) {
+            return;
+        }
+        String text;
+        if (currentMessageObject.messageOwner.ttl == 0x7FFFFFFF || media.ttl_seconds == 0x7FFFFFFF) {
+            text = LocaleController.getString(R.string.ViewOnceBadge);
+        } else {
+            text = LocaleController.formatString(R.string.SelfDestructBadge, media.ttl_seconds);
+        }
+        if (keptViewOnceBadgePaint == null) {
+            keptViewOnceBadgePaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+            keptViewOnceBadgePaint.setTextSize(AndroidUtilities.dp(11));
+            keptViewOnceBadgePaint.setColor(0xffffffff);
+            keptViewOnceBadgeBgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            keptViewOnceBadgeBgPaint.setColor(0x99000000);
+        }
+        float alpha = photoImage.getAlpha();
+        int oldTextAlpha = keptViewOnceBadgePaint.getAlpha();
+        int oldBgAlpha = keptViewOnceBadgeBgPaint.getAlpha();
+        keptViewOnceBadgePaint.setAlpha((int) (oldTextAlpha * alpha));
+        keptViewOnceBadgeBgPaint.setAlpha((int) (oldBgAlpha * alpha));
+        float textWidth = keptViewOnceBadgePaint.measureText(text);
+        float padH = AndroidUtilities.dp(6);
+        float padV = AndroidUtilities.dp(3);
+        float x = photoImage.getImageX() + AndroidUtilities.dp(6);
+        float y = photoImage.getImageY() + photoImage.getImageHeight() - AndroidUtilities.dp(6) - keptViewOnceBadgePaint.getTextSize() - padV * 2;
+        keptViewOnceBadgeRect.set(x, y, x + textWidth + padH * 2, y + keptViewOnceBadgePaint.getTextSize() + padV * 2);
+        canvas.drawRoundRect(keptViewOnceBadgeRect, AndroidUtilities.dp(10), AndroidUtilities.dp(10), keptViewOnceBadgeBgPaint);
+        Paint.FontMetricsInt fm = keptViewOnceBadgePaint.getFontMetricsInt();
+        canvas.drawText(text, x + padH, keptViewOnceBadgeRect.centerY() - (fm.ascent + fm.descent) / 2f, keptViewOnceBadgePaint);
+        keptViewOnceBadgePaint.setAlpha(oldTextAlpha);
+        keptViewOnceBadgeBgPaint.setAlpha(oldBgAlpha);
+    }
+
     protected boolean drawPhotoImage(Canvas canvas) {
         if (currentMessageObject != null && currentMessageObject.isLivePhoto()) {
             final AnimatedFileDrawable animation = photoImage.getAnimation();
@@ -29519,11 +29566,14 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                     photoImage.draw(canvas);
                     photoImage.setAlpha(wasAlpha);
                     photoImage.setForceNotMedia(false);
+                    drawKeptViewOnceBadge(canvas);
                     return r;
                 }
             }
         }
-        return photoImage.draw(canvas);
+        boolean r = photoImage.draw(canvas);
+        drawKeptViewOnceBadge(canvas);
+        return r;
     }
 
     public boolean areTags() {
