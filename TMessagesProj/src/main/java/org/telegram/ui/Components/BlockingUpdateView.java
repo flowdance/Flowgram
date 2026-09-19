@@ -39,7 +39,6 @@ import org.telegram.ui.Components.voip.CellFlickerDrawable;
 import java.util.Locale;
 
 import tw.nekomimi.nekogram.TextViewEffects;
-import tw.nekomimi.nekogram.helpers.remote.UpdateHelper;
 
 public class BlockingUpdateView extends FrameLayout implements NotificationCenter.NotificationCenterDelegate {
 
@@ -293,15 +292,11 @@ public class BlockingUpdateView extends FrameLayout implements NotificationCente
         NotificationCenter.getInstance(accountNum).addObserver(this, NotificationCenter.fileLoadFailed);
         NotificationCenter.getInstance(accountNum).addObserver(this, NotificationCenter.fileLoadProgressChanged);
         if (check) {
-            UpdateHelper.getInstance().checkNewVersionAvailable((response, error) -> AndroidUtilities.runOnUIThread(() -> {
-                if (response != null) {
-                    if (!response.can_not_skip) {
-                        setVisibility(GONE);
-                        SharedConfig.pendingAppUpdate = null;
-                        SharedConfig.saveConfig();
-                    }
-                }
-            }));
+            // Flowgram: in-app updates are removed, so any persisted blocking
+            // update state is stale — dismiss it instead of re-checking.
+            setVisibility(GONE);
+            SharedConfig.pendingAppUpdate = null;
+            SharedConfig.saveConfig();
         }
     }
 

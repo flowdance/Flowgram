@@ -28,7 +28,6 @@ import org.telegram.ui.ProfileActivity;
 
 import java.util.ArrayList;
 
-import tw.nekomimi.nekogram.NekoXConfig;
 import tw.nekomimi.nekogram.helpers.AppRestartHelper;
 import tw.nekomimi.nekogram.config.CellGroup;
 import tw.nekomimi.nekogram.config.ConfigItem;
@@ -67,7 +66,7 @@ public class NekoDebugSettingsActivity extends BaseNekoXSettingsActivity {
     // 切换版本
     private final AbstractConfigCell switchVersionRow = cellGroup.appendCell(new ConfigCellText("SwitchVersion", () -> {
         if (getParentActivity() == null) return;
-        Browser.openUrl(getParentActivity(), "https://github.com/NextAlone/Nagram/releases");
+        Browser.openUrl(getParentActivity(), BuildVars.GITHUB_RELEASE_URL);
     }));
 
     // 检查更新
@@ -75,19 +74,6 @@ public class NekoDebugSettingsActivity extends BaseNekoXSettingsActivity {
         if (getParentActivity() == null) return;
         Browser.openUrl(getParentActivity(), "tg://update");
     }));
-
-    // 自动更新通道
-    private final String[] autoUpdateChannelOptions = new String[]{
-            LocaleController.getString(R.string.AutoCheckUpdateOFF),
-            LocaleController.getString(R.string.AutoCheckUpdateStable),
-            LocaleController.getString(R.string.AutoCheckUpdateRc),
-            LocaleController.getString(R.string.AutoCheckUpdatePreview),
-    };
-    private final AbstractConfigCell autoUpdateChannelRow = cellGroup.appendCell(new ConfigCellSelectBox(
-            "AutoCheckUpdateSwitch",
-            new AutoUpdateChannelConfigItem(),
-            autoUpdateChannelOptions,
-            null));
 
     private final AbstractConfigCell restartAppRow = cellGroup.appendCell(new ConfigCellText("RestartApp", AppRestartHelper::triggerRebirth));
 
@@ -250,18 +236,6 @@ public class NekoDebugSettingsActivity extends BaseNekoXSettingsActivity {
             BuildVars.LOGS_ENABLED = BuildVars.DEBUG_VERSION = BuildVars.DEBUG_PRIVATE_VERSION = (boolean) value;
             SharedPreferences sharedPreferences = ApplicationLoader.applicationContext.getSharedPreferences("systemConfig", Context.MODE_PRIVATE);
             sharedPreferences.edit().putBoolean("logsEnabled", BuildVars.LOGS_ENABLED).apply();
-        }
-    }
-
-    private static class AutoUpdateChannelConfigItem extends ConfigItem {
-        AutoUpdateChannelConfigItem() {
-            super("AutoCheckUpdateSwitch", configTypeInt, 2);
-            value = NekoXConfig.autoUpdateReleaseChannel;
-        }
-
-        @Override
-        public void saveConfig() {
-            NekoXConfig.setAutoUpdateReleaseChannel((int) value);
         }
     }
 }

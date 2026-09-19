@@ -284,7 +284,6 @@ import tw.nekomimi.nekogram.settings.NekoGhostModeActivity;
 import tw.nekomimi.nekogram.NekoConfig;
 import tw.nekomimi.nekogram.utils.PrivacyUtil;
 import tw.nekomimi.nekogram.utils.ProxyUtil;
-import tw.nekomimi.nekogram.utils.UpdateUtil;
 import xyz.nextalone.nagram.MainTabsStyle;
 import xyz.nextalone.nagram.NaConfig;
 
@@ -5759,10 +5758,6 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 
         if (new Random().nextInt(100) < 50)
             PrivacyUtil.postCheckAll(getParentActivity(), currentAccount);
-        else if (new Random().nextInt(100) < 20) {
-            UpdateUtil.postCheckFollowChannel(getParentActivity(), currentAccount);
-            UpdateUtil.postCheckFollowTipsChannel(getParentActivity(), currentAccount);
-        }
 
         updateStoriesVisibility(false);
 

@@ -154,7 +154,6 @@ import kotlin.Unit;
 import me.vkryl.android.animator.BoolAnimator;
 import me.vkryl.android.animator.FactorAnimator;
 import tw.nekomimi.nekogram.NekoConfig;
-import tw.nekomimi.nekogram.NekoXConfig;
 import tw.nekomimi.nekogram.helpers.PasscodeHelper;
 import tw.nekomimi.nekogram.settings.NekoSettingsActivity;
 import tw.nekomimi.nekogram.utils.AlertUtil;
@@ -1472,51 +1471,13 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
             listView.adapter.update(true);
         });
         o.add(R.drawable.msg_retry, LocaleController.getString(R.string.SwitchVersion), () -> {
-            Browser.openUrl(getContext(), "https://github.com/NextAlone/Nagram/releases");
+            Browser.openUrl(getContext(), BuildVars.GITHUB_RELEASE_URL);
         });
 
         o.add(R.drawable.msg_search, LocaleController.getString(R.string.CheckUpdate), () -> {
             Browser.openUrl(getContext(), "tg://update");
         });
 
-        String currentChannel = " - ";
-        switch (NekoXConfig.autoUpdateReleaseChannel) {
-            case 0:
-                currentChannel += LocaleController.getString(R.string.AutoCheckUpdateOFF);
-                break;
-            case 1:
-                currentChannel += LocaleController.getString(R.string.AutoCheckUpdateStable);
-                break;
-            case 2:
-                currentChannel += LocaleController.getString(R.string.AutoCheckUpdateRc);
-                break;
-            case 3:
-                currentChannel += LocaleController.getString(R.string.AutoCheckUpdatePreview);
-                break;
-        }
-
-        o.add(R.drawable.update_black_24, LocaleController.getString(R.string.AutoCheckUpdateSwitch) + currentChannel, () -> {
-            ItemOptions switchOptions = ItemOptions.makeOptions(this, view);
-            switchOptions.setScrimViewBackground(listView.getClipBackground(view));
-            ItemOptionsPatch.addTitle(switchOptions, LocaleController.getString(R.string.AutoCheckUpdateSwitch), null);
-            ItemOptionsPatch.addRadioItem(switchOptions, LocaleController.getString(R.string.AutoCheckUpdateOFF), NekoXConfig.autoUpdateReleaseChannel == 0, null, radioButtonCell -> {
-                NekoXConfig.setAutoUpdateReleaseChannel(0);
-                ItemOptionsPatch.doRadioCheck(switchOptions, radioButtonCell);
-            });
-            ItemOptionsPatch.addRadioItem(switchOptions, LocaleController.getString(R.string.AutoCheckUpdateStable), NekoXConfig.autoUpdateReleaseChannel == 1, null, radioButtonCell -> {
-                NekoXConfig.setAutoUpdateReleaseChannel(1);
-                ItemOptionsPatch.doRadioCheck(switchOptions, radioButtonCell);
-            });
-            ItemOptionsPatch.addRadioItem(switchOptions, LocaleController.getString(R.string.AutoCheckUpdateRc), NekoXConfig.autoUpdateReleaseChannel == 2, null, radioButtonCell -> {
-                NekoXConfig.setAutoUpdateReleaseChannel(2);
-                ItemOptionsPatch.doRadioCheck(switchOptions, radioButtonCell);
-            });
-            ItemOptionsPatch.addRadioItem(switchOptions, LocaleController.getString(R.string.AutoCheckUpdatePreview), NekoXConfig.autoUpdateReleaseChannel == 3, null, radioButtonCell -> {
-                NekoXConfig.setAutoUpdateReleaseChannel(3);
-                ItemOptionsPatch.doRadioCheck(switchOptions, radioButtonCell);
-            });
-            switchOptions.show();
-        });
         o.show();
     }
 

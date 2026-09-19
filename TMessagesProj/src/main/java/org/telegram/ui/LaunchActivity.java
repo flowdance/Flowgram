@@ -267,12 +267,10 @@ import tw.nekomimi.nekogram.helpers.remote.ExtendedHelper;
 import tw.nekomimi.nekogram.helpers.remote.InlineBotRulesHelper;
 import tw.nekomimi.nekogram.helpers.remote.PagePreviewRulesHelper;
 import tw.nekomimi.nekogram.helpers.remote.PeerColorHelper;
-import tw.nekomimi.nekogram.helpers.remote.UpdateHelper;
 import tw.nekomimi.nekogram.helpers.remote.WallpaperHelper;
 import tw.nekomimi.nekogram.settings.NekoGhostModeActivity;
 import tw.nekomimi.nekogram.ui.BottomBuilder;
 import tw.nekomimi.nekogram.NekoConfig;
-import tw.nekomimi.nekogram.NekoXConfig;
 import tw.nekomimi.nekogram.settings.NekoSettingsActivity;
 import tw.nekomimi.nekogram.utils.AlertUtil;
 //import tw.nekomimi.nekogram.utils.MonetHelper;
@@ -6155,58 +6153,19 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
             });
             return;
         }
-        long updateCheckDelay;
-        if (NekoXConfig.autoUpdateReleaseChannel == 3) {
-            updateCheckDelay = 30 * 60 * 1000;
-        } else {
-            updateCheckDelay = 24 * 60 * 60 * 1000;
+        // Flowgram: the channel-based in-app updater has been removed; updates
+        // are distributed via GitHub Releases. There is nothing to check in the
+        // background, and a user-triggered check just opens the releases page.
+        if (SharedConfig.pendingAppUpdate != null) {
+            // Clear any update state persisted by an older build.
+            SharedConfig.setNewAppVersionAvailable(null);
+            NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.appUpdateAvailable);
         }
-        if (!force && Math.abs(System.currentTimeMillis() - SharedConfig.lastUpdateCheckTime) < /* MessagesController.getInstance(0).updateCheckDelay */ updateCheckDelay) {
-            return;
-        }
-        final TLRPC.TL_help_getAppUpdate req = new TLRPC.TL_help_getAppUpdate();
-        try {
-            req.source = ApplicationLoader.applicationContext.getPackageManager().getInstallerPackageName(ApplicationLoader.applicationContext.getPackageName());
-        } catch (Exception ignore) {
-
-        }
-        if (req.source == null) {
-            req.source = "";
-        }
-        final int accountNum = currentAccount;
-        if (progress != null) progress.init();
-        UpdateHelper.getInstance().checkNewVersionAvailable((res, error) -> {
-            SharedConfig.lastUpdateCheckTime = System.currentTimeMillis();
-            SharedConfig.saveConfig();
-            AndroidUtilities.runOnUIThread(() -> {
-                if (res != null) {
-                    SharedConfig.setNewAppVersionAvailable(res);
-                    if (res.can_not_skip) {
-                        showUpdateActivity(accountNum, res, false);
-                    } else {
-                        ApplicationLoader.applicationLoaderInstance.showUpdateAppPopup(LaunchActivity.this, res, accountNum);
-                    }
-                } else {
-                    if (force) {
-                        BaseFragment fragment = getLastFragment();
-                        if (fragment != null) {
-                            if (error == null) {
-                                BulletinFactory.of(fragment).createSimpleBulletin(R.raw.chats_infotip, LocaleController.getString(R.string.YourVersionIsLatest)).show();
-                            } else {
-                                AlertsCreator.createSimpleAlert(this, LocaleController.getString("ErrorOccurred", R.string.ErrorOccurred) + "\n" + error).show();
-                            }
-                        }
-                    }
-                    SharedConfig.setNewAppVersionAvailable(null);
-                }
-                NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.appUpdateAvailable);
-                if (progress != null) {
-                    progress.end();
-                }
-            });
-        }, updateAlways);
         if (progress != null) {
-            progress.init();
+            progress.end();
+        }
+        if (force) {
+            Browser.openUrl(this, BuildVars.GITHUB_RELEASE_URL);
         }
     }
 
