@@ -81,6 +81,7 @@ import cn.hutool.core.util.NumberUtil;
 import cn.hutool.core.util.StrUtil;
 import tw.nekomimi.nekogram.NekoConfig;
 import xyz.nextalone.nagram.NaConfig;
+import tw.nekomimi.nekogram.utils.FlowgramVoDiag;
 import tw.nekomimi.nekogram.database.ObjectBoxKt;
 
 public class MessagesStorage extends BaseController {
@@ -4755,6 +4756,9 @@ public class MessagesStorage extends BaseController {
     }
 
     public void emptyMessagesMedia(long dialogId, ArrayList<Integer> mids) {
+        if (FlowgramVoDiag.enabled()) {
+            FlowgramVoDiag.log(currentAccount, "EMPTY-MEDIA-CALLED", dialogId, 0, "mids=" + mids);
+        }
         storageQueue.postRunnable(() -> {
             SQLiteCursor cursor = null;
             SQLitePreparedStatement state = null;
@@ -4772,6 +4776,10 @@ public class MessagesStorage extends BaseController {
                         TLRPC.Message message = TLRPC.Message.TLdeserialize(data, data.readInt32(false), false);
                         message.readAttachPath(data, getUserConfig().clientUserId);
                         data.reuse();
+                        if (FlowgramVoDiag.enabled() && FlowgramVoDiag.isTrackedAnySpace(currentAccount, dialogId, message.id)) {
+                            FlowgramVoDiag.log(currentAccount, "EMPTY-MEDIA-ROW-BEFORE", dialogId, message.id,
+                                    FlowgramVoDiag.media(message) + " " + FlowgramVoDiag.fileState(currentAccount, message));
+                        }
                         if (message.media != null) {
                             if (!addFilesToDelete(message, filesToDelete, idsToDelete, namesToDelete, true)) {
                                 continue;
@@ -4808,6 +4816,10 @@ public class MessagesStorage extends BaseController {
                         message.serializeToStream(data);
 
                         state.requery();
+                        if (FlowgramVoDiag.enabled() && FlowgramVoDiag.isTrackedAnySpace(currentAccount, dialogId, message.id)) {
+                            FlowgramVoDiag.log(currentAccount, "EMPTY-MEDIA-ROW-WRITE-STEP", dialogId, message.id,
+                                    FlowgramVoDiag.media(message) + " " + FlowgramVoDiag.fileState(currentAccount, message));
+                        }
                         state.bindInteger(1, message.id);
                         state.bindLong(2, message.dialog_id);
                         state.bindInteger(3, MessageObject.getUnreadFlags(message));
@@ -4869,6 +4881,10 @@ public class MessagesStorage extends BaseController {
                             state.bindInteger(19, 0);
                         }
                         state.step();
+                        if (FlowgramVoDiag.enabled() && FlowgramVoDiag.isTrackedAnySpace(currentAccount, dialogId, message.id)) {
+                            FlowgramVoDiag.log(currentAccount, "EMPTY-MEDIA-ROW-WRITE-SUCCEEDED", dialogId, message.id,
+                                    FlowgramVoDiag.media(message) + " " + FlowgramVoDiag.trackedFileState(currentAccount, dialogId, message.id));
+                        }
                         data.reuse();
                         if (repliesData != null) {
                             repliesData.reuse();
@@ -4901,6 +4917,9 @@ public class MessagesStorage extends BaseController {
                     });
                 }
             } catch (Exception e) {
+                if (FlowgramVoDiag.enabled()) {
+                    FlowgramVoDiag.log(currentAccount, "EMPTY-MEDIA-FAILED", 0, 0, "ex=" + e.getClass().getSimpleName());
+                }
                 checkSQLException(e);
             } finally {
                 if (cursor != null) {
@@ -5878,6 +5897,9 @@ public class MessagesStorage extends BaseController {
     }
 
     public void createTaskForMid(long dialogId, int messageId, int time, int readTime, int ttl, boolean inner) {
+        if (FlowgramVoDiag.enabled() && FlowgramVoDiag.isTracked(currentAccount, 0, dialogId, messageId)) {
+            FlowgramVoDiag.log(currentAccount, "TASK-MID-CREATE", dialogId, messageId, "time=" + time + " readTime=" + readTime + " ttl=" + ttl + " inner=" + inner);
+        }
         storageQueue.postRunnable(() -> {
             SQLitePreparedStatement state = null;
             try {
@@ -5923,6 +5945,18 @@ public class MessagesStorage extends BaseController {
     }
 
     private void createTaskForSecretMedia(long dialogId, SparseArray<ArrayList<Integer>> messages) {
+        if (FlowgramVoDiag.enabled()) {
+            for (int a = 0, N = messages.size(); a < N; a++) {
+                ArrayList<Integer> taskMids = messages.valueAt(a);
+                for (int b = 0, M = taskMids.size(); b < M; b++) {
+                    if (FlowgramVoDiag.isTracked(currentAccount, 0, dialogId, taskMids.get(b))) {
+                        FlowgramVoDiag.log(currentAccount, "TASK-SECRET-CREATE", dialogId, taskMids.get(b),
+                                "mids=" + taskMids + " date=" + messages.keyAt(a));
+                        break;
+                    }
+                }
+            }
+        }
         SQLiteCursor cursor = null;
         SQLitePreparedStatement state = null;
         try {
@@ -11884,6 +11918,15 @@ public class MessagesStorage extends BaseController {
 
     private void putMessagesInternal(ArrayList<TLRPC.Message> messages, boolean withTransaction, boolean doNotUpdateDialogDate, int downloadMask, boolean ifNoLastMessage, int mode, long threadMessageId) {
         if (messages != null) {
+            if (FlowgramVoDiag.enabled()) {
+                for (int a = 0, N = messages.size(); a < N; a++) {
+                    TLRPC.Message diagMessage = messages.get(a);
+                    if (diagMessage != null && FlowgramVoDiag.observe(currentAccount, diagMessage.dialog_id, diagMessage)) {
+                        FlowgramVoDiag.log(currentAccount, "PUT-LIST-BEFORE", diagMessage.dialog_id, diagMessage.id,
+                                "mode=" + mode + " " + FlowgramVoDiag.media(diagMessage));
+                    }
+                }
+            }
             ArrayList<TL_ephemeral.EphemeralMessage> ephemeralMessages = null;
             for (TLRPC.Message message : messages) {
                 if (MessageObject.isEphemeralAndNotWelcome(message) && message.id > 0) {
@@ -11984,6 +12027,10 @@ public class MessagesStorage extends BaseController {
                     }
 
                     long did = MessageObject.getDialogId(message);
+                    if (FlowgramVoDiag.enabled() && FlowgramVoDiag.isTrackedAnySpace(currentAccount, did, message.id)) {
+                        FlowgramVoDiag.log(currentAccount, "PUT-LIST-WRITE-STEP", did, messageId,
+                                "table=welcome_messages " + FlowgramVoDiag.media(message));
+                    }
                     state_messages.bindInteger(1, messageId);
                     state_messages.bindLong(2, dialogId);
                     state_messages.bindInteger(3, message.send_state);
@@ -12014,6 +12061,9 @@ public class MessagesStorage extends BaseController {
                 if (withTransaction) {
                     database.commitTransaction();
                     databaseInTransaction = false;
+                    if (FlowgramVoDiag.enabled()) {
+                        FlowgramVoDiag.log(currentAccount, "PUT-LIST-WELCOME-COMMITTED", 0, 0, "count=" + messages.size());
+                    }
                 }
             } else if (scheduled) {
                 if (withTransaction) {
@@ -12042,6 +12092,10 @@ public class MessagesStorage extends BaseController {
                     message.serializeToStream(data);
 
                     long did = MessageObject.getDialogId(message);
+                    if (FlowgramVoDiag.enabled() && FlowgramVoDiag.isTrackedAnySpace(currentAccount, did, message.id)) {
+                        FlowgramVoDiag.log(currentAccount, "PUT-LIST-WRITE-STEP", did, messageId,
+                                "table=scheduled_messages_v2 " + FlowgramVoDiag.media(message));
+                    }
                     state_messages.bindInteger(1, messageId);
                     state_messages.bindLong(2, did);
                     state_messages.bindInteger(3, message.send_state);
@@ -12109,6 +12163,10 @@ public class MessagesStorage extends BaseController {
                     }
 
                     long did = MessageObject.getDialogId(message);
+                    if (FlowgramVoDiag.enabled() && FlowgramVoDiag.isTrackedAnySpace(currentAccount, did, message.id)) {
+                        FlowgramVoDiag.log(currentAccount, "PUT-LIST-WRITE-STEP", did, messageId,
+                                "table=quick_replies_messages " + FlowgramVoDiag.media(message));
+                    }
                     state_messages.bindInteger(1, messageId);
                     state_messages.bindLong(2, topicId);
                     state_messages.bindInteger(3, message.send_state);
@@ -12679,6 +12737,10 @@ public class MessagesStorage extends BaseController {
 
                         int pointer = 1;
                         statement.requery();
+                        if (FlowgramVoDiag.enabled() && FlowgramVoDiag.isTrackedAnySpace(currentAccount, dialogId, message.id)) {
+                            FlowgramVoDiag.log(currentAccount, isTopic ? "PUT-LIST-TOPICS-WRITE-STEP" : "PUT-LIST-WRITE-STEP", dialogId, messageId,
+                                    "table=" + (isTopic ? "messages_topics" : "messages_v2") + " " + FlowgramVoDiag.media(message));
+                        }
                         statement.bindInteger(pointer++, messageId);
                         statement.bindLong(pointer++, dialogId);
                         if (isTopic) {
@@ -13240,6 +13302,9 @@ public class MessagesStorage extends BaseController {
                 if (withTransaction) {
                     database.commitTransaction();
                     databaseInTransaction = false;
+                    if (FlowgramVoDiag.enabled()) {
+                        FlowgramVoDiag.log(currentAccount, "PUT-LIST-COMMITTED", 0, 0, "count=" + messages.size());
+                    }
                 }
                 updateFiltersReadCounter(newMessagesCounts, newMentionsCounts, false);
                 loadGroupedMessagesForTopicUpdates(topicUpdatesInUi);
@@ -13261,6 +13326,9 @@ public class MessagesStorage extends BaseController {
                 }
             }
         } catch (Exception e) {
+            if (FlowgramVoDiag.enabled()) {
+                FlowgramVoDiag.log(currentAccount, "PUT-LIST-FAILED", 0, 0, "ex=" + e.getClass().getSimpleName());
+            }
             checkSQLException(e);
         } finally {
             if (databaseInTransaction) {
@@ -13400,6 +13468,16 @@ public class MessagesStorage extends BaseController {
     }
 
     private void processEphemeralMessagesInternal(ArrayList<TL_ephemeral.EphemeralMessage> messages) {
+        if (FlowgramVoDiag.enabled()) {
+            for (TL_ephemeral.EphemeralMessage message : messages) {
+                long ephDialog = DialogObject.getPeerDialogId(message.peer_id);
+                int ephChannel = message.peer_id != null ? (int) message.peer_id.channel_id : 0;
+                if (FlowgramVoDiag.observeEphemeral(currentAccount, ephDialog, message)
+                        || FlowgramVoDiag.isTracked(currentAccount, ephChannel, ephDialog, message.id)) {
+                    FlowgramVoDiag.log(currentAccount, "EPH-PUT-BEFORE", ephDialog, message.id, FlowgramVoDiag.media(message));
+                }
+            }
+        }
         for (TL_ephemeral.EphemeralMessage message: messages) {
             if (message.top_msg_id != 0) {
                 continue;
@@ -13452,6 +13530,16 @@ public class MessagesStorage extends BaseController {
     }
 
     private void processEphemeralEditedMessagesInternal(ArrayList<TL_ephemeral.EphemeralMessage> messages) {
+        if (FlowgramVoDiag.enabled()) {
+            for (TL_ephemeral.EphemeralMessage message : messages) {
+                long ephDialog = DialogObject.getPeerDialogId(message.peer_id);
+                int ephChannel = message.peer_id != null ? (int) message.peer_id.channel_id : 0;
+                if (FlowgramVoDiag.observeEphemeral(currentAccount, ephDialog, message)
+                        || FlowgramVoDiag.isTracked(currentAccount, ephChannel, ephDialog, message.id)) {
+                    FlowgramVoDiag.log(currentAccount, "EPH-EDIT-PUT-BEFORE", ephDialog, message.id, FlowgramVoDiag.media(message));
+                }
+            }
+        }
         for (TL_ephemeral.EphemeralMessage message: messages) {
             if (message.top_msg_id != 0) {
                 continue;
@@ -13524,6 +13612,13 @@ public class MessagesStorage extends BaseController {
                 }
 
                 state.requery();
+                if (FlowgramVoDiag.enabled()) {
+                    long ephDialog = DialogObject.getPeerDialogId(message.peer_id);
+                    int ephChannel = message.peer_id != null ? (int) message.peer_id.channel_id : 0;
+                    if (FlowgramVoDiag.isTracked(currentAccount, ephChannel, ephDialog, message.id)) {
+                        FlowgramVoDiag.log(currentAccount, "EPH-WRITE-STEP", ephDialog, message.id, FlowgramVoDiag.media(message));
+                    }
+                }
                 state.bindLong(1, DialogObject.getPeerDialogId(message.peer_id));
                 state.bindInteger(2, message.id);
                 state.bindInteger(3, message.top_msg_id); // topic id
@@ -13534,8 +13629,14 @@ public class MessagesStorage extends BaseController {
 
             if (withTransaction) {
                 database.commitTransaction();
+                if (FlowgramVoDiag.enabled()) {
+                    FlowgramVoDiag.log(currentAccount, "EPH-PUT-COMMITTED", 0, 0, "count=" + messages.size());
+                }
             }
         } catch (Exception e) {
+            if (FlowgramVoDiag.enabled()) {
+                FlowgramVoDiag.log(currentAccount, "EPH-PUT-FAILED", 0, 0, "ex=" + e.getClass().getSimpleName());
+            }
             checkSQLException(e);
         } finally {
             if (state != null) {
@@ -13613,6 +13714,14 @@ public class MessagesStorage extends BaseController {
 
                 ArrayList<TL_ephemeral.EphemeralMessage> deleted = getEphemeralMessagesInternal(dialogId, ids);
                 if (deleted != null) {
+                    if (FlowgramVoDiag.enabled()) {
+                        for (TL_ephemeral.EphemeralMessage e : deleted) {
+                            if (FlowgramVoDiag.isTrackedAnySpace(currentAccount, dialogId, e.id)) {
+                                FlowgramVoDiag.log(currentAccount, "EPH-DELETE-BEFORE", dialogId, e.id,
+                                        FlowgramVoDiag.media(e) + " row=exists");
+                            }
+                        }
+                    }
                     deletedMessages.put(dialogId, deleted);
                 }
 
@@ -13636,8 +13745,14 @@ public class MessagesStorage extends BaseController {
 
             if (withTransaction) {
                 database.commitTransaction();
+                if (FlowgramVoDiag.enabled()) {
+                    FlowgramVoDiag.log(currentAccount, "EPH-DELETE-COMMITTED", 0, 0, "dialogs=" + messages.size());
+                }
             }
         } catch (Exception e) {
+            if (FlowgramVoDiag.enabled()) {
+                FlowgramVoDiag.log(currentAccount, "EPH-DELETE-FAILED", 0, 0, "ex=" + e.getClass().getSimpleName());
+            }
             checkSQLException(e);
         } finally {
             if (state != null) {
@@ -14342,7 +14457,24 @@ public class MessagesStorage extends BaseController {
                 if (arrayList != null && !NaConfig.INSTANCE.getKeepViewOnceMedia().Bool()) {
                     // Flowgram fork: keep view-once media locally instead of
                     // emptying it when the server confirms the content was read.
+                    if (FlowgramVoDiag.enabled()) {
+                        for (int a = 0, N = arrayList.size(); a < N; a++) {
+                            if (FlowgramVoDiag.isTrackedAnySpace(currentAccount, dialogId, arrayList.get(a))) {
+                                FlowgramVoDiag.log(currentAccount, "READ-INTERNAL-EMPTY-CALLED", dialogId, arrayList.get(a),
+                                        "mids=" + arrayList + " date=" + date);
+                                break;
+                            }
+                        }
+                    }
                     emptyMessagesMedia(dialogId, arrayList);
+                } else if (arrayList != null && FlowgramVoDiag.enabled()) {
+                    for (int a = 0, N = arrayList.size(); a < N; a++) {
+                        if (FlowgramVoDiag.isTrackedAnySpace(currentAccount, dialogId, arrayList.get(a))) {
+                            FlowgramVoDiag.log(currentAccount, "READ-INTERNAL-SKIPPED-BY-KEEP", dialogId, arrayList.get(a),
+                                    "mids=" + arrayList + " date=" + date);
+                            break;
+                        }
+                    }
                 }
                 cursor.dispose();
                 cursor = null;
@@ -14437,9 +14569,33 @@ public class MessagesStorage extends BaseController {
                     cursor.dispose();
                     cursor = null;
                     for (int a = 0, N = toDelete.size(); a < N; a++) {
+                        if (FlowgramVoDiag.enabled()) {
+                            long toDeleteDialog = toDelete.keyAt(a);
+                            for (int b = 0, M = toDelete.valueAt(a).size(); b < M; b++) {
+                                int toDeleteMid = toDelete.valueAt(a).get(b);
+                                if (FlowgramVoDiag.isTrackedAnySpace(currentAccount, toDeleteDialog, toDeleteMid)
+                                        || FlowgramVoDiag.isTracked(currentAccount, 0, 0, toDeleteMid)) {
+                                    FlowgramVoDiag.log(currentAccount, "READ-CONTENTS-ROUTED-TO-INTERNAL", toDeleteDialog, toDeleteMid,
+                                            "mids=" + toDelete.valueAt(a));
+                                    break;
+                                }
+                            }
+                        }
                         markMessagesContentAsReadInternal(toDelete.keyAt(a), toDelete.valueAt(a), currentDate);
                     }
                     for (int a = 0, N = toTask.size(); a < N; a++) {
+                        if (FlowgramVoDiag.enabled()) {
+                            long toTaskDialog = toTask.keyAt(a);
+                            for (int b = 0, M = toTask.valueAt(a).size(); b < M; b++) {
+                                int toTaskMid = toTask.valueAt(a).get(b);
+                                if (FlowgramVoDiag.isTrackedAnySpace(currentAccount, toTaskDialog, toTaskMid)
+                                        || FlowgramVoDiag.isTracked(currentAccount, 0, 0, toTaskMid)) {
+                                    FlowgramVoDiag.log(currentAccount, "READ-CONTENTS-ROUTED-TO-TASK", toTaskDialog, toTaskMid,
+                                            "mids=" + toTask.valueAt(a));
+                                    break;
+                                }
+                            }
+                        }
                         createTaskForSecretMedia(toTask.keyAt(a), toTask.valueAt(a));
                     }
                 } catch (Exception e) {
@@ -14881,6 +15037,17 @@ public class MessagesStorage extends BaseController {
                     long did = messagesByDialogs.keyAt(a);
                     ArrayList<Integer> mids = messagesByDialogs.valueAt(a);
                     String idsStr = TextUtils.join(",", mids);
+                    // Flowgram fork diagnostics: row state of tracked targets
+                    // immediately before / after the row deletion statements
+                    // (targeted queries on the storage thread only).
+                    if (FlowgramVoDiag.enabled()) {
+                        for (int b = 0, M = mids.size(); b < M; b++) {
+                            int delMid = mids.get(b);
+                            if (FlowgramVoDiag.isTrackedAnySpace(currentAccount, did, delMid)) {
+                                diagLogDeletedRowBefore(did, delMid);
+                            }
+                        }
+                    }
                     if (!DialogObject.isEncryptedDialog(did)) {
                         if (DialogObject.isChatDialog(did)) {
                             database.executeFast(String.format(Locale.US, "UPDATE chat_settings_v2 SET pinned = 0 WHERE uid = %d AND pinned IN (%s)", -did, idsStr)).stepThis().dispose();
@@ -14912,6 +15079,16 @@ public class MessagesStorage extends BaseController {
                     }
                     database.executeFast(String.format(Locale.US, "DELETE FROM messages_v2 WHERE mid IN(%s) AND uid = %d", ids, did)).stepThis().dispose();
                     database.executeFast(String.format(Locale.US, "DELETE FROM messages_topics WHERE mid IN(%s) AND uid = %d", ids, did)).stepThis().dispose();
+                    if (FlowgramVoDiag.enabled()) {
+                        for (int b = 0, M = mids.size(); b < M; b++) {
+                            int delMid = mids.get(b);
+                            if (FlowgramVoDiag.isTrackedAnySpace(currentAccount, did, delMid)) {
+                                FlowgramVoDiag.log(currentAccount, "DELETE-ROWS-ROW-AFTER", did, delMid,
+                                        "row=" + diagRowState(did, delMid)
+                                                + " " + FlowgramVoDiag.trackedFileState(currentAccount, did, delMid));
+                            }
+                        }
+                    }
                     database.executeFast(String.format(Locale.US, "DELETE FROM polls_v2 WHERE mid IN(%s) AND uid = %d", ids, did)).stepThis().dispose();
                     database.executeFast(String.format(Locale.US, "DELETE FROM bot_keyboard WHERE mid IN(%s) AND uid = %d", ids, did)).stepThis().dispose();
                     database.executeFast(String.format(Locale.US, "DELETE FROM bot_keyboard_topics WHERE mid IN(%s) AND uid = %d", ids, did)).stepThis().dispose();
@@ -15102,6 +15279,9 @@ public class MessagesStorage extends BaseController {
             }
             return dialogsIds;
         } catch (Exception e) {
+            if (FlowgramVoDiag.enabled()) {
+                FlowgramVoDiag.log(currentAccount, "DELETE-ROWS-FAILED", 0, 0, "ex=" + e.getClass().getSimpleName());
+            }
             checkSQLException(e);
         } finally {
             if (database != null) {
@@ -15336,9 +15516,72 @@ public class MessagesStorage extends BaseController {
         executeInStorageQueue(() -> updateDialogsWithDeletedMessagesInternal(dialogId, channelId, messages, additionalDialogsToUpdate));
     }
 
+    // Flowgram fork diagnostics helpers: targeted single-row checks for
+    // tracked view-once messages (storage thread only). Not used when
+    // logging is disabled.
+    // Three-state: "still-exists" / "absent" (only when the query succeeded
+    // and returned no row) / "unknown" (query failed — must not be treated
+    // as row-deleted).
+    private String diagRowState(long dialogId, int mid) {
+        SQLiteCursor cursor = null;
+        try {
+            cursor = database.queryFinalized(String.format(Locale.US, "SELECT mid FROM messages_v2 WHERE mid = %d AND uid = %d LIMIT 1", mid, dialogId));
+            return cursor.next() ? "still-exists" : "absent";
+        } catch (Exception e) {
+            return "unknown";
+        } finally {
+            if (cursor != null) {
+                cursor.dispose();
+            }
+        }
+    }
+
+    private void diagLogDeletedRowBefore(long dialogId, int mid) {
+        SQLiteCursor cursor = null;
+        try {
+            cursor = database.queryFinalized(String.format(Locale.US, "SELECT data FROM messages_v2 WHERE mid = %d AND uid = %d LIMIT 1", mid, dialogId));
+            if (!cursor.next()) {
+                FlowgramVoDiag.log(currentAccount, "DELETE-ROWS-ROW-BEFORE", dialogId, mid, "row=absent");
+            } else {
+                NativeByteBuffer data = cursor.byteBufferValue(0);
+                if (data == null) {
+                    FlowgramVoDiag.log(currentAccount, "DELETE-ROWS-ROW-BEFORE", dialogId, mid, "row=exists blob=null");
+                } else {
+                    try {
+                        TLRPC.Message message = TLRPC.Message.TLdeserialize(data, data.readInt32(false), false);
+                        FlowgramVoDiag.log(currentAccount, "DELETE-ROWS-ROW-BEFORE", dialogId, mid,
+                                "row=exists " + FlowgramVoDiag.media(message));
+                    } finally {
+                        data.reuse();
+                    }
+                }
+            }
+        } catch (Exception e) {
+            FlowgramVoDiag.log(currentAccount, "DELETE-ROWS-ROW-BEFORE-FAILED", dialogId, mid, "ex=" + e.getClass().getSimpleName());
+        } finally {
+            if (cursor != null) {
+                cursor.dispose();
+            }
+        }
+    }
+
     public ArrayList<Long> markMessagesAsDeleted(long dialogId, ArrayList<Integer> messages, boolean useQueue, boolean deleteFiles, int mode, int topicId) {
         if (messages.isEmpty()) {
             return null;
+        }
+        if (FlowgramVoDiag.enabled()) {
+            boolean anyDeleteTracked = false;
+            for (int a = 0, N = messages.size(); a < N; a++) {
+                int deleteMid = messages.get(a);
+                if (dialogId != 0 ? FlowgramVoDiag.isTracked(currentAccount, 0, dialogId, deleteMid)
+                        : FlowgramVoDiag.isTracked(currentAccount, 0, 0, deleteMid)) {
+                    anyDeleteTracked = true;
+                    break;
+                }
+            }
+            if (anyDeleteTracked) {
+                FlowgramVoDiag.log(currentAccount, "DELETE-ROWS-CALLED", dialogId, 0, "mids=" + messages + " mode=" + mode + " topicId=" + topicId + " deleteFiles=" + deleteFiles);
+            }
         }
         if (useQueue) {
             storageQueue.postRunnable(() -> markMessagesAsDeletedInternal(dialogId, messages, deleteFiles, mode, topicId));
@@ -15449,7 +15692,19 @@ public class MessagesStorage extends BaseController {
     //     message; the media assignment happens on the caller thread after
     //     the latch, so the message is never mutated across threads.
     public void restoreKeptViewOnceMediaSync(long dialogId, TLRPC.Message message) {
+        boolean diagTracked = false;
+        if (FlowgramVoDiag.enabled() && message != null) {
+            int diagChannel = message.peer_id != null ? (int) message.peer_id.channel_id : 0;
+            diagTracked = FlowgramVoDiag.isTracked(currentAccount, diagChannel, dialogId, message.id);
+            if (diagTracked) {
+                FlowgramVoDiag.log(currentAccount, "RESTORE-SYNC-BEFORE", dialogId, message.id, FlowgramVoDiag.media(message));
+            }
+        }
         if (!NaConfig.INSTANCE.getKeepViewOnceMedia().Bool() || !isConsumedViewOnceMediaShape(message)) {
+            if (diagTracked) {
+                FlowgramVoDiag.log(currentAccount, "RESTORE-SYNC-SKIP", dialogId, message != null ? message.id : 0,
+                        "keep=" + NaConfig.INSTANCE.getKeepViewOnceMedia().Bool() + " " + FlowgramVoDiag.media(message));
+            }
             return;
         }
         final int mid = message.id;
@@ -15457,6 +15712,9 @@ public class MessagesStorage extends BaseController {
         if (Thread.currentThread() == storageQueue) {
             restored = loadKeptViewOnceMedia(mid, dialogId);
         } else if (Looper.myLooper() == Looper.getMainLooper()) {
+            if (diagTracked) {
+                FlowgramVoDiag.log(currentAccount, "RESTORE-SYNC-SKIP-UI-THREAD", dialogId, mid, "");
+            }
             return;
         } else {
             boolean wasInterrupted = Thread.interrupted();
@@ -15470,6 +15728,9 @@ public class MessagesStorage extends BaseController {
                 }
             });
             if (!posted) {
+                if (diagTracked) {
+                    FlowgramVoDiag.log(currentAccount, "RESTORE-SYNC-POST-FAILED", dialogId, mid, "");
+                }
                 if (wasInterrupted) {
                     Thread.currentThread().interrupt();
                 }
@@ -15491,6 +15752,13 @@ public class MessagesStorage extends BaseController {
         }
         if (restored != null) {
             message.media = restored;
+            if (diagTracked) {
+                FlowgramVoDiag.log(currentAccount, "RESTORE-SYNC-AFTER", dialogId, mid, FlowgramVoDiag.media(message) + " " + FlowgramVoDiag.fileState(currentAccount, message));
+            }
+        } else {
+            if (diagTracked) {
+                FlowgramVoDiag.log(currentAccount, "RESTORE-SYNC-MISS", dialogId, mid, "");
+            }
         }
     }
 
@@ -15518,14 +15786,35 @@ public class MessagesStorage extends BaseController {
     // only read the database and return the stored media (or null).
     private TLRPC.MessageMedia loadKeptViewOnceMedia(int mid, long dialogId) {
         SQLiteCursor cursor = null;
+        boolean diag = FlowgramVoDiag.enabled();
         try {
             cursor = database.queryFinalized(String.format(Locale.US, "SELECT data FROM messages_v2 WHERE mid = %d AND uid = %d", mid, dialogId));
-            if (cursor.next()) {
+            if (!cursor.next()) {
+                if (diag) {
+                    FlowgramVoDiag.log(currentAccount, "LOAD-MISS", dialogId, mid, "reason=no-db-row");
+                }
+            } else {
                 NativeByteBuffer data = cursor.byteBufferValue(0);
-                if (data != null) {
+                if (data == null) {
+                    if (diag) {
+                        FlowgramVoDiag.log(currentAccount, "LOAD-MISS", dialogId, mid, "reason=blob-null");
+                    }
+                } else {
                     try {
                         TLRPC.Message old = TLRPC.Message.TLdeserialize(data, data.readInt32(false), false);
-                        if (old != null && old.media != null && (old.media.ttl_seconds != 0 || old.ttl != 0)) {
+                        if (old == null) {
+                            if (diag) {
+                                FlowgramVoDiag.log(currentAccount, "LOAD-MISS", dialogId, mid, "reason=deserialize-null");
+                            }
+                        } else if (old.media == null) {
+                            if (diag) {
+                                FlowgramVoDiag.log(currentAccount, "LOAD-MISS", dialogId, mid, "reason=old-media-null");
+                            }
+                        } else if (!(old.media.ttl_seconds != 0 || old.ttl != 0)) {
+                            if (diag) {
+                                FlowgramVoDiag.log(currentAccount, "LOAD-MISS", dialogId, mid, "reason=old-not-ttl " + FlowgramVoDiag.media(old));
+                            }
+                        } else {
                             TLRPC.MessageMedia oldMedia = old.media;
                             // Explicit whitelist of valid restorable copies: a
                             // stored photo media must carry a real photo, a
@@ -15537,7 +15826,14 @@ public class MessagesStorage extends BaseController {
                                     && oldMedia.photo != null && !(oldMedia.photo instanceof TLRPC.TL_photoEmpty);
                             boolean validDocument = oldMedia instanceof TLRPC.TL_messageMediaDocument
                                     && oldMedia.document != null && !(oldMedia.document instanceof TLRPC.TL_documentEmpty);
-                            if (validPhoto || validDocument) {
+                            if (!validPhoto && !validDocument) {
+                                if (diag) {
+                                    FlowgramVoDiag.log(currentAccount, "LOAD-MISS", dialogId, mid, "reason=old-media-not-whitelisted " + FlowgramVoDiag.media(old));
+                                }
+                            } else {
+                                if (diag) {
+                                    FlowgramVoDiag.log(currentAccount, "LOAD-HIT", dialogId, mid, FlowgramVoDiag.media(old) + " " + FlowgramVoDiag.fileState(currentAccount, old));
+                                }
                                 return oldMedia;
                             }
                         }
@@ -15547,6 +15843,9 @@ public class MessagesStorage extends BaseController {
                 }
             }
         } catch (Exception e) {
+            if (diag) {
+                FlowgramVoDiag.log(currentAccount, "LOAD-FAILED", dialogId, mid, "ex=" + e.getClass().getSimpleName());
+            }
             checkSQLException(e);
         } finally {
             if (cursor != null) {
@@ -15564,9 +15863,20 @@ public class MessagesStorage extends BaseController {
         if (!isConsumedViewOnceMediaShape(message)) {
             return;
         }
+        boolean diagTracked = false;
+        if (FlowgramVoDiag.enabled()) {
+            int diagChannel = message.peer_id != null ? (int) message.peer_id.channel_id : 0;
+            diagTracked = FlowgramVoDiag.isTracked(currentAccount, diagChannel, dialogId, message.id);
+            if (diagTracked) {
+                FlowgramVoDiag.log(currentAccount, "RESTORE-HISTORY-BEFORE", dialogId, message.id, FlowgramVoDiag.media(message));
+            }
+        }
         TLRPC.MessageMedia restored = loadKeptViewOnceMedia(message.id, dialogId);
         if (restored != null) {
             message.media = restored;
+            if (diagTracked) {
+                FlowgramVoDiag.log(currentAccount, "RESTORE-HISTORY-AFTER", dialogId, message.id, FlowgramVoDiag.media(message));
+            }
         }
     }
 
@@ -16112,6 +16422,13 @@ public class MessagesStorage extends BaseController {
                     cursor = database.queryFinalized(String.format(Locale.US, "SELECT uid, read_state, custom_params FROM messages_v2 WHERE mid = %d AND uid = %d LIMIT 1", message.id, MessageObject.getDialogId(message)));
                     if (!cursor.next()) {
                         cursor.dispose();
+                        if (FlowgramVoDiag.enabled()) {
+                            int diagChannel = message.peer_id != null ? (int) message.peer_id.channel_id : 0;
+                            long diagDialog = MessageObject.getDialogId(message);
+                            if (FlowgramVoDiag.isTrackedAnySpace(currentAccount, diagDialog, message.id)) {
+                                FlowgramVoDiag.log(currentAccount, "REPLACE-EXISTING-NO-ROW", diagDialog, message.id, FlowgramVoDiag.media(message));
+                            }
+                        }
                         return;
                     }
                     readState = cursor.intValue(1);
@@ -16159,6 +16476,13 @@ public class MessagesStorage extends BaseController {
                     state.requery();
 
                     int pointer = 1;
+                    if (FlowgramVoDiag.enabled()) {
+                        int diagChannel = message.peer_id != null ? (int) message.peer_id.channel_id : 0;
+                        if (FlowgramVoDiag.isTracked(currentAccount, diagChannel, dialogId, message.id)) {
+                            FlowgramVoDiag.log(currentAccount, isTopic ? "REPLACE-EXISTING-TOPICS-STEP" : "REPLACE-EXISTING-STEP", dialogId, message.id,
+                                    "table=" + (isTopic ? "messages_topics" : "messages_v2") + " " + FlowgramVoDiag.media(message));
+                        }
+                    }
                     state.bindInteger(pointer++, message.id);
                     state.bindLong(pointer++, dialogId);
                     if (isTopic) {
@@ -16273,6 +16597,12 @@ public class MessagesStorage extends BaseController {
                 data.reuse();
 
                 database.commitTransaction();
+                if (FlowgramVoDiag.enabled()) {
+                    long diagDialog = message.dialog_id;
+                    if (FlowgramVoDiag.isTrackedAnySpace(currentAccount, diagDialog, message.id)) {
+                        FlowgramVoDiag.log(currentAccount, "REPLACE-EXISTING-COMMITTED", diagDialog, message.id, FlowgramVoDiag.media(message));
+                    }
+                }
                 if (broadcast) {
                     HashMap<Long, TLRPC.User> userHashMap = new HashMap<>();
                     HashMap<Long, TLRPC.Chat> chatHashMap = new HashMap<>();
@@ -16298,6 +16628,9 @@ public class MessagesStorage extends BaseController {
                     });
                 }
             } catch (Exception e) {
+                if (FlowgramVoDiag.enabled()) {
+                    FlowgramVoDiag.log(currentAccount, "REPLACE-EXISTING-FAILED", 0, 0, "ex=" + e.getClass().getSimpleName());
+                }
                 checkSQLException(e);
             } finally {
                 if (database != null) {
@@ -16366,7 +16699,18 @@ public class MessagesStorage extends BaseController {
                 // history reload) must not wipe our local copy.
                 if (NaConfig.INSTANCE.getKeepViewOnceMedia().Bool()) {
                     for (int a = 0, N = messages.messages.size(); a < N; a++) {
-                        restoreKeptViewOnceMedia(messages.messages.get(a), dialogId);
+                        TLRPC.Message diagMessage = messages.messages.get(a);
+                        if (FlowgramVoDiag.observe(currentAccount, dialogId, diagMessage)) {
+                            FlowgramVoDiag.log(currentAccount, "PUT-HISTORY-BEFORE-RESTORE", dialogId, diagMessage.id,
+                                    "load_type=" + load_type + " " + FlowgramVoDiag.media(diagMessage));
+                        }
+                        restoreKeptViewOnceMedia(diagMessage, dialogId);
+                        if (diagMessage != null && FlowgramVoDiag.enabled()) {
+                            int diagChannel = diagMessage.peer_id != null ? (int) diagMessage.peer_id.channel_id : 0;
+                            if (FlowgramVoDiag.isTracked(currentAccount, diagChannel, dialogId, diagMessage.id)) {
+                                FlowgramVoDiag.log(currentAccount, "PUT-HISTORY-AFTER-RESTORE", dialogId, diagMessage.id, FlowgramVoDiag.media(diagMessage));
+                            }
+                        }
                     }
                 }
                 final boolean scheduled = mode == ChatActivity.MODE_SCHEDULED;
@@ -16407,6 +16751,9 @@ public class MessagesStorage extends BaseController {
                     putChatsInternal(messages.chats);
 
                     database.commitTransaction();
+                    if (FlowgramVoDiag.enabled() && !messages.messages.isEmpty()) {
+                        FlowgramVoDiag.log(currentAccount, "PUT-HISTORY-WELCOME-COMMITTED", dialogId, 0, "count=" + messages.messages.size());
+                    }
                 } else if (quickReplies) {
                     state_messages = database.executeFast("REPLACE INTO quick_replies_messages VALUES(?, ?, ?, ?, ?, ?, NULL, 0)");
                     int count = messages.messages.size();
@@ -16709,6 +17056,13 @@ public class MessagesStorage extends BaseController {
                             currentState.requery();
 
                             int pointer = 1;
+                            if (FlowgramVoDiag.enabled()) {
+                                int diagChannel = message.peer_id != null ? (int) message.peer_id.channel_id : 0;
+                                if (FlowgramVoDiag.isTracked(currentAccount, diagChannel, dialogId, message.id)) {
+                                    FlowgramVoDiag.log(currentAccount, isTopicMessage ? "PUT-HISTORY-TOPICS-WRITE-STEP" : "PUT-HISTORY-WRITE-STEP", dialogId, message.id,
+                                            FlowgramVoDiag.media(message) + " " + FlowgramVoDiag.fileState(currentAccount, message));
+                                }
+                            }
                             currentState.bindInteger(pointer++, message.id);
                             currentState.bindLong(pointer++, dialogId);
                             if (isTopicMessage) {
@@ -16924,6 +17278,9 @@ public class MessagesStorage extends BaseController {
                     }
 
                     database.commitTransaction();
+                    if (FlowgramVoDiag.enabled() && !messages.messages.isEmpty()) {
+                        FlowgramVoDiag.log(currentAccount, "PUT-HISTORY-COMMITTED", dialogId, 0, "count=" + messages.messages.size() + " load_type=" + load_type);
+                    }
 
                     if (createDialog || updateDialogs) {
                         updateDialogsWithDeletedMessages(dialogId, channelId, new ArrayList<>(), null);
@@ -16939,6 +17296,9 @@ public class MessagesStorage extends BaseController {
                     onReactionsUpdate(reactionUpdates);
                 }
             } catch (Exception e) {
+                if (FlowgramVoDiag.enabled()) {
+                    FlowgramVoDiag.log(currentAccount, "PUT-HISTORY-FAILED", 0, 0, "ex=" + e.getClass().getSimpleName());
+                }
                 checkSQLException(e);
             } finally {
                 if (database != null) {

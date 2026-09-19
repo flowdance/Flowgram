@@ -145,6 +145,7 @@ import java.util.stream.Collectors;
 import cn.hutool.core.thread.ThreadUtil;
 import tw.nekomimi.nekogram.ui.InternalFilters;
 import tw.nekomimi.nekogram.NekoConfig;
+import tw.nekomimi.nekogram.utils.FlowgramVoDiag;
 import tw.nekomimi.nekogram.NekoXConfig;
 import tw.nekomimi.nekogram.utils.AlertUtil;
 import tw.nekomimi.nekogram.utils.UIUtil;
@@ -8442,6 +8443,9 @@ public class MessagesController extends BaseController implements NotificationCe
                             getNotificationCenter().postNotificationName(NotificationCenter.updateMessageMedia, viewerObject.messageOwner);
                         }
                         if (!mids.isEmpty()) {
+                            if (FlowgramVoDiag.enabled()) {
+                                FlowgramVoDiag.log(currentAccount, "TIMER-TASKMEDIA-FIRE", dialogId, 0, "mids=" + mids);
+                            }
                             getMessagesStorage().emptyMessagesMedia(dialogId, mids);
                         }
                     }
@@ -14756,6 +14760,9 @@ public class MessagesController extends BaseController implements NotificationCe
         getMessagesStorage().removePendingTask(taskId);
         ArrayList<Integer> mids = new ArrayList<>();
         mids.add(mid);
+        if (FlowgramVoDiag.enabled()) {
+            FlowgramVoDiag.log(currentAccount, "TASK102-FIRE", dialogId, mid, "");
+        }
         getMessagesStorage().emptyMessagesMedia(dialogId, mids);
     }
 
@@ -19073,6 +19080,14 @@ public class MessagesController extends BaseController implements NotificationCe
                 stakeDiceInfo = ((TL_update.TL_updateEmojiGameInfo) baseUpdate).info;
             } else if (baseUpdate instanceof TL_update.TL_updateReadMessagesContents) {
                 TL_update.TL_updateReadMessagesContents update = (TL_update.TL_updateReadMessagesContents) baseUpdate;
+                if (FlowgramVoDiag.enabled()) {
+                    for (int a = 0, N = update.messages.size(); a < N; a++) {
+                        if (FlowgramVoDiag.isTracked(currentAccount, 0, 0, update.messages.get(a))) {
+                            FlowgramVoDiag.log(currentAccount, "READ-CONTENTS-ARRIVE", 0, update.messages.get(a), "mids=" + update.messages + " date=" + update.date);
+                            break;
+                        }
+                    }
+                }
                 markContentAsReadMessagesDate = update.date;
                 if (markContentAsReadMessages == null) {
                     markContentAsReadMessages = new LongSparseArray<>();
@@ -19085,6 +19100,14 @@ public class MessagesController extends BaseController implements NotificationCe
                 ids.addAll(update.messages);
             } else if (baseUpdate instanceof TL_update.TL_updateChannelReadMessagesContents) {
                 TL_update.TL_updateChannelReadMessagesContents update = (TL_update.TL_updateChannelReadMessagesContents) baseUpdate;
+                if (FlowgramVoDiag.enabled()) {
+                    for (int a = 0, N = update.messages.size(); a < N; a++) {
+                        if (FlowgramVoDiag.isTracked(currentAccount, (int) update.channel_id, -update.channel_id, update.messages.get(a))) {
+                            FlowgramVoDiag.log(currentAccount, "READ-CONTENTS-ARRIVE", -update.channel_id, update.messages.get(a), "mids=" + update.messages);
+                            break;
+                        }
+                    }
+                }
                 if (markContentAsReadMessages == null) {
                     markContentAsReadMessages = new LongSparseArray<>();
                 }
@@ -19165,6 +19188,14 @@ public class MessagesController extends BaseController implements NotificationCe
                 dialogs_read_outbox_max.put(dialogId, Math.max(value, update.max_id));
             } else if (baseUpdate instanceof TL_update.TL_updateDeleteMessages) {
                 TL_update.TL_updateDeleteMessages update = (TL_update.TL_updateDeleteMessages) baseUpdate;
+                if (FlowgramVoDiag.enabled()) {
+                    for (int a = 0, N = update.messages.size(); a < N; a++) {
+                        if (FlowgramVoDiag.isTracked(currentAccount, 0, 0, update.messages.get(a))) {
+                            FlowgramVoDiag.log(currentAccount, "DELETE-MESSAGES-ARRIVE", 0, update.messages.get(a), "mids=" + update.messages);
+                            break;
+                        }
+                    }
+                }
                 if (deletedMessages == null) {
                     deletedMessages = new LongSparseArray<>();
                 }
@@ -19687,6 +19718,14 @@ public class MessagesController extends BaseController implements NotificationCe
                 dialogs_read_outbox_max.put(dialogId, Math.max(value, update.max_id));
             } else if (baseUpdate instanceof TL_update.TL_updateDeleteChannelMessages) {
                 TL_update.TL_updateDeleteChannelMessages update = (TL_update.TL_updateDeleteChannelMessages) baseUpdate;
+                if (FlowgramVoDiag.enabled()) {
+                    for (int a = 0, N = update.messages.size(); a < N; a++) {
+                        if (FlowgramVoDiag.isTracked(currentAccount, (int) update.channel_id, -update.channel_id, update.messages.get(a))) {
+                            FlowgramVoDiag.log(currentAccount, "DELETE-MESSAGES-ARRIVE", -update.channel_id, update.messages.get(a), "mids=" + update.messages);
+                            break;
+                        }
+                    }
+                }
                 if (BuildVars.LOGS_ENABLED) {
                     FileLog.d(baseUpdate + " channelId = " + update.channel_id);
                 }
@@ -19845,6 +19884,9 @@ public class MessagesController extends BaseController implements NotificationCe
                 // afterwards leaves the published object rendering as the
                 // deleted stub (photo vanishing from the open chat).
                 if (message.dialog_id != 0) {
+                    if (FlowgramVoDiag.observe(currentAccount, message.dialog_id, message)) {
+                        FlowgramVoDiag.log(currentAccount, "EDIT-ARRIVE", message.dialog_id, message.id, FlowgramVoDiag.media(message));
+                    }
                     getMessagesStorage().restoreKeptViewOnceMediaSync(message.dialog_id, message);
                 }
 
@@ -19952,6 +19994,12 @@ public class MessagesController extends BaseController implements NotificationCe
                 }
             } else if (baseUpdate instanceof TL_update.TL_updateNewEphemeralMessage) {
                 final TL_update.TL_updateNewEphemeralMessage updateNewEphemeralMessage = (TL_update.TL_updateNewEphemeralMessage) baseUpdate;
+                if (FlowgramVoDiag.enabled()) {
+                    long ephDialog = DialogObject.getPeerDialogId(updateNewEphemeralMessage.message.peer_id);
+                    if (FlowgramVoDiag.observeEphemeral(currentAccount, ephDialog, updateNewEphemeralMessage.message)) {
+                        FlowgramVoDiag.log(currentAccount, "EPH-NEW-ARRIVE", ephDialog, updateNewEphemeralMessage.message.id, FlowgramVoDiag.media(updateNewEphemeralMessage.message));
+                    }
+                }
                 if (ephemeralUpdates == null) {
                     ephemeralUpdates = new EphemeralMessagesHelper.EphemeralUpdates();
                 }
@@ -19959,6 +20007,10 @@ public class MessagesController extends BaseController implements NotificationCe
 
                 if (!updateNewEphemeralMessage.message.welcome) {
                     final TLRPC.TL_message convertedMessage = EphemeralMessagesHelper.convertEphemeralToFakeDefault(updateNewEphemeralMessage.message);
+                    if (FlowgramVoDiag.enabled()) {
+                        FlowgramVoDiag.log(currentAccount, "EPH-CONVERT", MessageObject.getDialogId(convertedMessage), convertedMessage.id,
+                                "origId=" + updateNewEphemeralMessage.message.id + " packedId=" + convertedMessage.id);
+                    }
                     final long dialogId = MessageObject.getDialogId(convertedMessage);
                     if (MessagesStorage.isValidKeyboardToSave(convertedMessage)) {
                         getMessagesStorage().getStorageQueue().postRunnable(() -> {
@@ -19968,6 +20020,12 @@ public class MessagesController extends BaseController implements NotificationCe
                 }
             } else if (baseUpdate instanceof TL_update.TL_updateEditEphemeralMessage) {
                 final TL_update.TL_updateEditEphemeralMessage updateEditEphemeralMessage = (TL_update.TL_updateEditEphemeralMessage) baseUpdate;
+                if (FlowgramVoDiag.enabled()) {
+                    long ephDialog = DialogObject.getPeerDialogId(updateEditEphemeralMessage.message.peer_id);
+                    if (FlowgramVoDiag.observeEphemeral(currentAccount, ephDialog, updateEditEphemeralMessage.message)) {
+                        FlowgramVoDiag.log(currentAccount, "EPH-EDIT-ARRIVE", ephDialog, updateEditEphemeralMessage.message.id, FlowgramVoDiag.media(updateEditEphemeralMessage.message));
+                    }
+                }
                 if (ephemeralUpdates == null) {
                     ephemeralUpdates = new EphemeralMessagesHelper.EphemeralUpdates();
                 }
@@ -19975,6 +20033,10 @@ public class MessagesController extends BaseController implements NotificationCe
 
                 if (!updateEditEphemeralMessage.message.welcome) {
                     final TLRPC.TL_message convertedMessage = EphemeralMessagesHelper.convertEphemeralToFakeDefault(updateEditEphemeralMessage.message);
+                    if (FlowgramVoDiag.enabled()) {
+                        FlowgramVoDiag.log(currentAccount, "EPH-CONVERT", MessageObject.getDialogId(convertedMessage), convertedMessage.id,
+                                "origId=" + updateEditEphemeralMessage.message.id + " packedId=" + convertedMessage.id);
+                    }
                     final long dialogId = MessageObject.getDialogId(convertedMessage);
                     if (MessagesStorage.isValidKeyboardToSave(convertedMessage)) {
                         getMessagesStorage().getStorageQueue().postRunnable(() -> {
@@ -19984,6 +20046,20 @@ public class MessagesController extends BaseController implements NotificationCe
                 }
             } else if (baseUpdate instanceof TL_update.TL_updateDeleteEphemeralMessages) {
                 final TL_update.TL_updateDeleteEphemeralMessages updateDeleteEphemeralMessage = (TL_update.TL_updateDeleteEphemeralMessages) baseUpdate;
+                final long ephDeleteDialogId = DialogObject.getPeerDialogId(updateDeleteEphemeralMessage.peer);
+                if (FlowgramVoDiag.enabled()) {
+                    int ephChannelId = updateDeleteEphemeralMessage.peer != null ? (int) updateDeleteEphemeralMessage.peer.channel_id : 0;
+                    boolean anyTracked = false;
+                    for (int a = 0, N = updateDeleteEphemeralMessage.ids.size(); a < N; a++) {
+                        if (FlowgramVoDiag.isTracked(currentAccount, ephChannelId, ephDeleteDialogId, updateDeleteEphemeralMessage.ids.get(a))) {
+                            anyTracked = true;
+                            break;
+                        }
+                    }
+                    if (anyTracked) {
+                        FlowgramVoDiag.log(currentAccount, "EPH-DELETE-ARRIVE", ephDeleteDialogId, 0, "ids=" + updateDeleteEphemeralMessage.ids);
+                    }
+                }
                 if (ephemeralUpdates == null) {
                     ephemeralUpdates = new EphemeralMessagesHelper.EphemeralUpdates();
                 }
@@ -20173,6 +20249,11 @@ public class MessagesController extends BaseController implements NotificationCe
             }
         }
         if (ephemeralMessagesDeletedArr != null) {
+            if (FlowgramVoDiag.enabled()) {
+                for (int a = 0, size = ephemeralMessagesDeletedArr.size(); a < size; a++) {
+                    FlowgramVoDiag.log(currentAccount, "EPH-DELETE-FLUSH", ephemeralMessagesDeletedArr.keyAt(a), 0, "ids=" + ephemeralMessagesDeletedArr.valueAt(a));
+                }
+            }
             getMessagesStorage().deleteEphemeralMessages(ephemeralMessagesDeletedArr, true);
         }
 
@@ -21461,6 +21542,19 @@ public class MessagesController extends BaseController implements NotificationCe
                         continue;
                     }
                     if (keepDeletedMessages) {
+                        if (FlowgramVoDiag.enabled()) {
+                            boolean anyKeptTracked = false;
+                            for (int b = 0, size2 = arrayList.size(); b < size2; b++) {
+                                Integer keptId = arrayList.get(b);
+                                if (dialogId != 0 ? FlowgramVoDiag.isTrackedAnySpace(currentAccount, dialogId, keptId) : FlowgramVoDiag.isTracked(currentAccount, 0, 0, keptId)) {
+                                    anyKeptTracked = true;
+                                    break;
+                                }
+                            }
+                            if (anyKeptTracked) {
+                                FlowgramVoDiag.log(currentAccount, "POST-KEPT-DELETED", dialogId, 0, "mids=" + arrayList);
+                            }
+                        }
                         getMessagesStorage().markMessagesAsKeptDeleted(dialogId, arrayList);
                         getNotificationCenter().postNotificationName(NotificationCenter.messagesDeletedKept, arrayList, -dialogId);
                         continue;

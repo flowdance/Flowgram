@@ -380,6 +380,7 @@ import kotlin.Unit;
 import tw.nekomimi.nekogram.BackButtonMenuRecent;
 import tw.nekomimi.nekogram.DialogConfig;
 import tw.nekomimi.nekogram.NekoConfig;
+import tw.nekomimi.nekogram.utils.FlowgramVoDiag;
 import tw.nekomimi.nekogram.NekoXConfig;
 import tw.nekomimi.nekogram.helpers.AyuFilter;
 import tw.nekomimi.nekogram.helpers.remote.EmojiHelper;
@@ -23244,6 +23245,19 @@ public class ChatActivity extends BaseFragment implements
             }
             ArrayList<Integer> markAsDeletedMessages = (ArrayList<Integer>) args[0];
             long channelId = (Long) args[1];
+            if (FlowgramVoDiag.enabled() && (channelId == 0 || channelId == -dialog_id)) {
+                for (int a = 0, N = markAsDeletedMessages.size(); a < N; a++) {
+                    int delMid = markAsDeletedMessages.get(a);
+                    boolean delTracked = channelId == 0
+                            ? FlowgramVoDiag.isTracked(currentAccount, 0, dialog_id, delMid) || FlowgramVoDiag.isTracked(currentAccount, 0, 0, delMid)
+                            : FlowgramVoDiag.isTracked(currentAccount, (int) channelId, -channelId, delMid);
+                    if (delTracked) {
+                        FlowgramVoDiag.log(currentAccount, "UI-MESSAGES-DELETED", dialog_id, delMid,
+                                "channelId=" + channelId + " mids=" + markAsDeletedMessages + " scheduled=" + scheduled);
+                        break;
+                    }
+                }
+            }
             boolean update = args.length > 2 && (boolean) args[2];
             boolean sent = args.length > 3 && (boolean) args[3];
             int scheduledMessageId = args.length > 5 ? (int) args[5] : 0;
@@ -23310,6 +23324,21 @@ public class ChatActivity extends BaseFragment implements
         } else if (id == NotificationCenter.messagesDeletedKept) {
             // Flowgram fork: messages deleted for everyone were kept locally;
             // mark them in place and refresh instead of removing them.
+            if (FlowgramVoDiag.enabled()) {
+                ArrayList<Integer> keptMids = (ArrayList<Integer>) args[0];
+                long keptChannelId = (Long) args[1];
+                for (int a = 0, N = keptMids.size(); a < N; a++) {
+                    int keptMid = keptMids.get(a);
+                    boolean keptTracked = keptChannelId == 0
+                            ? FlowgramVoDiag.isTracked(currentAccount, 0, dialog_id, keptMid) || FlowgramVoDiag.isTracked(currentAccount, 0, 0, keptMid)
+                            : FlowgramVoDiag.isTracked(currentAccount, (int) keptChannelId, -keptChannelId, keptMid);
+                    if (keptTracked) {
+                        FlowgramVoDiag.log(currentAccount, "UI-KEPT-DELETED-ARRIVE", dialog_id, keptMid,
+                                "channelId=" + keptChannelId + " mids=" + keptMids + " mode=" + chatMode);
+                        break;
+                    }
+                }
+            }
             if (chatMode == MODE_SCHEDULED) {
                 return;
             }
@@ -24203,6 +24232,13 @@ public class ChatActivity extends BaseFragment implements
             }
         } else if (id == NotificationCenter.updateMessageMedia) {
             TLRPC.Message message = (TLRPC.Message) args[0];
+            if (FlowgramVoDiag.enabled() && message != null) {
+                int updChannel = message.peer_id != null ? (int) message.peer_id.channel_id : 0;
+                if (FlowgramVoDiag.isTracked(currentAccount, updChannel, dialog_id, message.id)
+                        || FlowgramVoDiag.isTracked(currentAccount, updChannel, 0, message.id)) {
+                    FlowgramVoDiag.log(currentAccount, "UI-UPDATE-MEDIA", dialog_id, message.id, FlowgramVoDiag.media(message));
+                }
+            }
             MessageObject existMessageObject = messagesDict[0].get(message.id);
             if (existMessageObject != null) {
                 existMessageObject.messageOwner.media = message.media;
@@ -24335,6 +24371,30 @@ public class ChatActivity extends BaseFragment implements
         } else if (id == NotificationCenter.replaceMessagesObjects) {
             long did = (long) args[0];
             final ArrayList<MessageObject> messageObjects = (ArrayList<MessageObject>) args[1];
+            // Flowgram fork diagnostics: validate the dialog BEFORE touching
+            // either dictionary (channel and non-channel id spaces can share
+            // numeric mids), then locate the previous object in the correct
+            // dictionary (did == dialog_id → main, did == mergeDialogId →
+            // migrated history). Distinguishes "notification received" from
+            // "a replacement will actually be applied" (old found).
+            if (FlowgramVoDiag.enabled() && (did == dialog_id || did == mergeDialogId)) {
+                int diagDict = did == dialog_id ? 0 : 1;
+                for (int a = 0, N = messageObjects.size(); a < N; a++) {
+                    MessageObject diagNew = messageObjects.get(a);
+                    if (diagNew == null || diagNew.messageOwner == null) {
+                        continue;
+                    }
+                    int diagChannel = diagNew.messageOwner.peer_id != null ? (int) diagNew.messageOwner.peer_id.channel_id : 0;
+                    if (!FlowgramVoDiag.isTracked(currentAccount, diagChannel, did, diagNew.getId())) {
+                        continue;
+                    }
+                    MessageObject diagOld = messagesDict[diagDict].get(diagNew.getId());
+                    FlowgramVoDiag.log(currentAccount, "UI-REPLACE-RECEIVED", did, diagNew.getId(),
+                            "old=" + (diagOld == null ? "absent" : FlowgramVoDiag.messageObject(diagOld))
+                                    + " new=" + FlowgramVoDiag.messageObject(diagNew)
+                                    + " matched=" + (diagOld != null) + " dict=" + diagDict);
+                }
+            }
             if (replyingMessageObject != null) {
                 for (int i = 0; i < messageObjects.size(); ++i) {
                     MessageObject messageObject = messageObjects.get(i);

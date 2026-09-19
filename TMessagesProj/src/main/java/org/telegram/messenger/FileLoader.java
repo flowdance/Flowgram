@@ -32,6 +32,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.function.Function;
 
+import tw.nekomimi.nekogram.utils.FlowgramVoDiag;
+
 public class FileLoader extends BaseController {
 
     private static final int PRIORITY_STREAM = 4;
@@ -1750,6 +1752,12 @@ public class FileLoader extends BaseController {
             for (int a = 0; a < files.size(); a++) {
                 File file = files.get(a);
                 File encrypted = new File(file.getAbsolutePath() + ".enc");
+                // Flowgram fork diagnostics: observe the ACTUAL deletion point
+                // (this queue), never the initiation site.
+                boolean diagExistsBefore = false;
+                if (FlowgramVoDiag.enabled()) {
+                    diagExistsBefore = file.exists();
+                }
                 if (encrypted.exists()) {
                     try {
                         if (!encrypted.delete()) {
@@ -1785,6 +1793,7 @@ public class FileLoader extends BaseController {
                 } catch (Exception e) {
                     FileLog.e(e);
                 }
+                FlowgramVoDiag.noteFileDeleteExecuted(file, diagExistsBefore, file.exists());
             }
             if (type == 2) {
                 ImageLoader.getInstance().clearMemory();
