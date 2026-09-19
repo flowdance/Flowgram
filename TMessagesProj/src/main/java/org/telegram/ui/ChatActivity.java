@@ -16352,8 +16352,10 @@ public class ChatActivity extends BaseFragment implements
         }
         TLRPC.MessageMedia media = MessageObject.getMedia(messageObject.messageOwner);
         if (media == null || media.ttl_seconds == 0 || !messageObject.messageOwner.media_unread) {
+            FileLog.d("[FlowgramKeepOnce] sendViewOnceReadReceipt SKIP mid=" + messageObject.getId() + " ttl_seconds=" + (media == null ? 0 : media.ttl_seconds) + " media_unread=" + messageObject.messageOwner.media_unread);
             return;
         }
+        FileLog.d("[FlowgramKeepOnce] sendViewOnceReadReceipt SENDING mid=" + messageObject.getId());
         getMessagesController().markMessageAsRead2(dialog_id, messageObject.getId(), null, 0, 0, false);
     }
 
@@ -23229,6 +23231,7 @@ public class ChatActivity extends BaseFragment implements
                 return;
             }
             ArrayList<Integer> markAsDeletedMessages = (ArrayList<Integer>) args[0];
+            FileLog.d("[FlowgramKeepOnce] messagesDeleted event mids=" + markAsDeletedMessages + " scheduled=" + scheduled);
             long channelId = (Long) args[1];
             boolean update = args.length > 2 && (boolean) args[2];
             boolean sent = args.length > 3 && (boolean) args[3];

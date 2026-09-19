@@ -4755,6 +4755,9 @@ public class MessagesStorage extends BaseController {
     }
 
     public void emptyMessagesMedia(long dialogId, ArrayList<Integer> mids) {
+        // Flowgram diagnostic: trace every media emptying to find remaining
+        // destruction paths for kept view-once media.
+        FileLog.e("[FlowgramKeepOnce] emptyMessagesMedia dialog=" + dialogId + " mids=" + mids, new Throwable("caller"));
         storageQueue.postRunnable(() -> {
             SQLiteCursor cursor = null;
             SQLitePreparedStatement state = null;
@@ -14326,6 +14329,7 @@ public class MessagesStorage extends BaseController {
     }
 
     private void markMessagesContentAsReadInternal(long dialogId, ArrayList<Integer> mids, int date) {
+        FileLog.d("[FlowgramKeepOnce] markMessagesContentAsReadInternal dialog=" + dialogId + " mids=" + mids + " date=" + date + " keep=" + NaConfig.INSTANCE.getKeepViewOnceMedia().Bool());
         SQLiteCursor cursor = null;
         try {
             String midsStr = TextUtils.join(",", mids);
@@ -15446,6 +15450,9 @@ public class MessagesStorage extends BaseController {
                                 !(old.media.document instanceof TLRPC.TL_documentEmpty) &&
                                 !(old.media instanceof TLRPC.TL_messageMediaDocument && old.media.document == null)) {
                             message.media = old.media;
+                            FileLog.d("[FlowgramKeepOnce] restoreKeptViewOnceMedia RESTORED mid=" + message.id + " dialog=" + dialogId);
+                        } else {
+                            FileLog.d("[FlowgramKeepOnce] restoreKeptViewOnceMedia no local copy mid=" + message.id + " dialog=" + dialogId);
                         }
                     } finally {
                         data.reuse();
