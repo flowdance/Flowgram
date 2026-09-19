@@ -14586,13 +14586,17 @@ public class MessagesStorage extends BaseController {
                     for (int a = 0, N = toTask.size(); a < N; a++) {
                         if (FlowgramVoDiag.enabled()) {
                             long toTaskDialog = toTask.keyAt(a);
-                            for (int b = 0, M = toTask.valueAt(a).size(); b < M; b++) {
-                                int toTaskMid = toTask.valueAt(a).get(b);
-                                if (FlowgramVoDiag.isTrackedAnySpace(currentAccount, toTaskDialog, toTaskMid)
-                                        || FlowgramVoDiag.isTracked(currentAccount, 0, 0, toTaskMid)) {
-                                    FlowgramVoDiag.log(currentAccount, "READ-CONTENTS-ROUTED-TO-TASK", toTaskDialog, toTaskMid,
-                                            "mids=" + toTask.valueAt(a));
-                                    break;
+                            SparseArray<ArrayList<Integer>> toTaskByDate = toTask.valueAt(a);
+                            for (int b = 0, M = toTaskByDate.size(); b < M; b++) {
+                                ArrayList<Integer> toTaskMids = toTaskByDate.valueAt(b);
+                                for (int c = 0, K = toTaskMids.size(); c < K; c++) {
+                                    int toTaskMid = toTaskMids.get(c);
+                                    if (FlowgramVoDiag.isTrackedAnySpace(currentAccount, toTaskDialog, toTaskMid)
+                                            || FlowgramVoDiag.isTracked(currentAccount, 0, 0, toTaskMid)) {
+                                        FlowgramVoDiag.log(currentAccount, "READ-CONTENTS-ROUTED-TO-TASK", toTaskDialog, toTaskMid,
+                                                "mids=" + toTaskMids);
+                                        break;
+                                    }
                                 }
                             }
                         }
