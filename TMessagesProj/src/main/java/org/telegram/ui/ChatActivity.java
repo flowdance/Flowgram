@@ -23304,6 +23304,7 @@ public class ChatActivity extends BaseFragment implements
                 }
                 if (obj != null && obj.messageOwner != null) {
                     obj.messageOwner.flags |= TLRPC.MESSAGE_FLAG_KEPT_DELETED;
+                    obj.forceUpdate = true;
                     changed = true;
                 }
             }
