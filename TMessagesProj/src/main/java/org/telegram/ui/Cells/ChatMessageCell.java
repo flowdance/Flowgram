@@ -18577,6 +18577,21 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             author = MessagesController.getInstance(currentAccount).getUser(fromId);
         }
         boolean hasReplies = messageObject.hasReplies();
+        // Flowgram fork: message kept after a remote delete-for-everyone.
+        boolean keptDeleted = false;
+        if (!messageObject.scheduled) {
+            if (currentMessagesGroup == null || currentMessagesGroup.messages.isEmpty()) {
+                keptDeleted = (messageObject.messageOwner.flags & TLRPC.MESSAGE_FLAG_KEPT_DELETED) != 0;
+            } else {
+                for (int a = 0, size = currentMessagesGroup.messages.size(); a < size; a++) {
+                    MessageObject object = currentMessagesGroup.messages.get(a);
+                    if ((object.messageOwner.flags & TLRPC.MESSAGE_FLAG_KEPT_DELETED) != 0) {
+                        keptDeleted = true;
+                        break;
+                    }
+                }
+            }
+        }
         if (messageObject.scheduled || messageObject.messageOwner.edit_hide) {
             edited = false;
         } else if (currentPosition == null || currentMessagesGroup == null || currentMessagesGroup.messages.isEmpty()) {
@@ -18605,6 +18620,8 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             timeString = LocaleController.formatSmallDateChat(currentMessageObject.realDate) + ", " + LocaleController.getInstance().getFormatterDay().format((long) (currentMessageObject.realDate) * 1000);
         } else if (currentMessageObject.isRepostPreview) {
             timeString = LocaleController.formatSmallDateChat(messageObject.messageOwner.date) + ", " + LocaleController.getInstance().getFormatterDay().format((long) (messageObject.messageOwner.date) * 1000);
+        } else if (keptDeleted) {
+            timeString = getString(R.string.DeletedMessage) + " " + LocaleController.getInstance().getFormatterDay().format((long) (currentMessageObject.messageOwner.date) * 1000);
         } else if (edited) {
             drawEditedIcon = NaConfig.INSTANCE.getShowEditedIcon().Bool();
             if (drawEditedIcon) {

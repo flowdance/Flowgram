@@ -21441,10 +21441,18 @@ public class MessagesController extends BaseController implements NotificationCe
                 }
             }
             if (deletedMessagesFinal != null) {
+                // Flowgram fork: optionally keep messages deleted for everyone on
+                // the server, marking them locally instead of removing them.
+                final boolean keepDeletedMessages = NaConfig.INSTANCE.getKeepDeletedMessages().Bool();
                 for (int a = 0, size = deletedMessagesFinal.size(); a < size; a++) {
                     long dialogId = deletedMessagesFinal.keyAt(a);
                     ArrayList<Integer> arrayList = deletedMessagesFinal.valueAt(a);
                     if (arrayList == null) {
+                        continue;
+                    }
+                    if (keepDeletedMessages) {
+                        getMessagesStorage().markMessagesAsKeptDeleted(dialogId, arrayList);
+                        getNotificationCenter().postNotificationName(NotificationCenter.messagesDeletedKept, arrayList, -dialogId);
                         continue;
                     }
                     getNotificationCenter().postNotificationName(NotificationCenter.messagesDeleted, arrayList, -dialogId, false);
@@ -21476,7 +21484,9 @@ public class MessagesController extends BaseController implements NotificationCe
                         }
                     }
                 }
-                getNotificationsController().removeDeletedMessagesFromNotifications(deletedMessagesFinal, false);
+                if (!keepDeletedMessages) {
+                    getNotificationsController().removeDeletedMessagesFromNotifications(deletedMessagesFinal, false);
+                }
             }
             if (deletedQuickRepliesMessagesFinal != null) {
                 for (int a = 0, size = deletedQuickRepliesMessagesFinal.size(); a < size; a++) {
@@ -21560,7 +21570,7 @@ public class MessagesController extends BaseController implements NotificationCe
                 getMessagesStorage().markMessagesContentAsRead(key, arrayList, currentTime2, markContentAsReadMessagesDate);
             }
         }
-        if (deletedMessages != null) {
+        if (deletedMessages != null && !NaConfig.INSTANCE.getKeepDeletedMessages().Bool()) {
             for (int a = 0, size = deletedMessages.size(); a < size; a++) {
                 long key = deletedMessages.keyAt(a);
                 ArrayList<Integer> arrayList = deletedMessages.valueAt(a);

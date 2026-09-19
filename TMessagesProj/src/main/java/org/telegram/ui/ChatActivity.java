@@ -3169,6 +3169,7 @@ public class ChatActivity extends BaseFragment implements
             .add(NotificationCenter.didLoadSendAsPeers)
             .add(NotificationCenter.closeChatActivity)
             .add(NotificationCenter.messagesDeleted)
+            .add(NotificationCenter.messagesDeletedKept)
             .add(NotificationCenter.historyCleared)
             .add(NotificationCenter.messageReceivedByServer)
             .add(NotificationCenter.messageReceivedByAck)
@@ -23278,6 +23279,36 @@ public class ChatActivity extends BaseFragment implements
                 } else {
                     removeSelfFromStack();
                 }
+            }
+        } else if (id == NotificationCenter.messagesDeletedKept) {
+            // Flowgram fork: messages deleted for everyone were kept locally;
+            // mark them in place and refresh instead of removing them.
+            if (chatMode == MODE_SCHEDULED) {
+                return;
+            }
+            ArrayList<Integer> markAsDeletedMessages = (ArrayList<Integer>) args[0];
+            long channelId = (Long) args[1];
+            if (ChatObject.isChannel(currentChat)) {
+                if (channelId != 0 && channelId != -dialog_id) {
+                    return;
+                }
+            } else if (channelId != 0) {
+                return;
+            }
+            boolean changed = false;
+            for (int a = 0, size = markAsDeletedMessages.size(); a < size; a++) {
+                Integer mid = markAsDeletedMessages.get(a);
+                MessageObject obj = messagesDict[0].get(mid);
+                if (obj == null) {
+                    obj = messagesDict[1].get(mid);
+                }
+                if (obj != null && obj.messageOwner != null) {
+                    obj.messageOwner.flags |= TLRPC.MESSAGE_FLAG_KEPT_DELETED;
+                    changed = true;
+                }
+            }
+            if (changed) {
+                updateVisibleRows();
             }
         } else if (id == NotificationCenter.quickRepliesDeleted) {
             if (chatMode != MODE_QUICK_REPLIES) return;

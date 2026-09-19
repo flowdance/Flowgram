@@ -15345,6 +15345,100 @@ public class MessagesStorage extends BaseController {
         return null;
     }
 
+    // Flowgram fork: instead of removing messages deleted for everyone on the
+    // server, rewrites their serialized data with MESSAGE_FLAG_KEPT_DELETED so
+    // they stay in history and render a "deleted" marker. Marks rows in both
+    // messages_v2 and messages_topics.
+    public void markMessagesAsKeptDeleted(long dialogId, ArrayList<Integer> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return;
+        }
+        storageQueue.postRunnable(() -> {
+            SQLiteCursor cursor = null;
+            SQLitePreparedStatement state = null;
+            try {
+                String ids = TextUtils.join(",", messages);
+                ArrayList<Object[]> updates = new ArrayList<>();
+                if (dialogId != 0) {
+                    cursor = database.queryFinalized(String.format(Locale.US, "SELECT uid, 0, mid, data FROM messages_v2 WHERE mid IN(%s) AND uid = %d", ids, dialogId));
+                } else {
+                    cursor = database.queryFinalized(String.format(Locale.US, "SELECT uid, 0, mid, data FROM messages_v2 WHERE mid IN(%s) AND is_channel = 0", ids));
+                }
+                collectKeptDeletedUpdates(cursor, updates);
+                cursor.dispose();
+                cursor = null;
+                if (dialogId != 0) {
+                    cursor = database.queryFinalized(String.format(Locale.US, "SELECT uid, topic_id, mid, data FROM messages_topics WHERE mid IN(%s) AND uid = %d", ids, dialogId));
+                } else {
+                    cursor = database.queryFinalized(String.format(Locale.US, "SELECT uid, topic_id, mid, data FROM messages_topics WHERE mid IN(%s) AND is_channel = 0", ids));
+                }
+                collectKeptDeletedUpdates(cursor, updates);
+                cursor.dispose();
+                cursor = null;
+                if (!updates.isEmpty()) {
+                    for (Object[] update : updates) {
+                        long uid = (long) update[0];
+                        int topicId = (int) update[1];
+                        int mid = (int) update[2];
+                        NativeByteBuffer buffer = (NativeByteBuffer) update[3];
+                        try {
+                            if (topicId != 0) {
+                                state = database.executeFast("UPDATE messages_topics SET data = ? WHERE uid = ? AND topic_id = ? AND mid = ?");
+                                state.bindByteBuffer(1, buffer);
+                                state.bindLong(2, uid);
+                                state.bindInteger(3, topicId);
+                                state.bindInteger(4, mid);
+                            } else {
+                                state = database.executeFast("UPDATE messages_v2 SET data = ? WHERE uid = ? AND mid = ?");
+                                state.bindByteBuffer(1, buffer);
+                                state.bindLong(2, uid);
+                                state.bindInteger(3, mid);
+                            }
+                            state.step();
+                            state.dispose();
+                            state = null;
+                        } finally {
+                            buffer.reuse();
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                checkSQLException(e);
+            } finally {
+                if (cursor != null) {
+                    cursor.dispose();
+                }
+                if (state != null) {
+                    state.dispose();
+                }
+            }
+        });
+    }
+
+    private void collectKeptDeletedUpdates(SQLiteCursor cursor, ArrayList<Object[]> updates) throws Exception {
+        while (cursor.next()) {
+            long uid = cursor.longValue(0);
+            int topicId = cursor.intValue(1);
+            int mid = cursor.intValue(2);
+            NativeByteBuffer data = cursor.byteBufferValue(3);
+            if (data == null) {
+                continue;
+            }
+            try {
+                TLRPC.Message message = TLRPC.Message.TLdeserialize(data, data.readInt32(false), false);
+                if (message == null) {
+                    continue;
+                }
+                message.flags |= TLRPC.MESSAGE_FLAG_KEPT_DELETED;
+                NativeByteBuffer buffer = new NativeByteBuffer(message.getObjectSize());
+                message.serializeToStream(buffer);
+                updates.add(new Object[]{uid, topicId, mid, buffer});
+            } finally {
+                data.reuse();
+            }
+        }
+    }
+
     private ArrayList<Long> markMessagesAsDeletedInternal(long channelId, int mid, boolean deleteFiles) {
         SQLiteCursor cursor = null;
         SQLitePreparedStatement state = null;

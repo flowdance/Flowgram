@@ -75,6 +75,8 @@
     <string name="CustomPoor">Custom long click reply word</string>
     <string name="CustomPoorHint">Default pool</string>
     <string name="CustomEditedMessage">Custom Edited Message word</string>
+    <string name="KeepDeletedMessages">Keep deleted messages</string>
+    <string name="DeletedMessage">deleted</string>
     <string name="FakeHighPerformanceDevice">Fake High Performance Device</string>
     <string name="DisableEmojiDrawLimit">Disable Emoji Draw Limit</string>
     <string name="IconDecoration">Icon Decoration</string>

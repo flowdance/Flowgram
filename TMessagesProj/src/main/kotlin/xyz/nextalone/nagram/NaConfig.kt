@@ -335,6 +335,12 @@ object NaConfig {
             ConfigItem.configTypeBool,
             false
         )
+    val keepDeletedMessages =
+        addConfig(
+            "KeepDeletedMessages",
+            ConfigItem.configTypeBool,
+            false
+        )
     val disableProxyWhenVpnEnabled =
         addConfig(
             "DisableProxyWhenVpnEnabled",

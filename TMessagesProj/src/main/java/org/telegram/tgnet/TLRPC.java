@@ -77,6 +77,9 @@ public class TLRPC {
     public static final int MESSAGE_FLAG_HAS_VIEWS          = 0x00000400;
     public static final int MESSAGE_FLAG_HAS_BOT_ID         = 0x00000800;
     public static final int MESSAGE_FLAG_EDITED             = 0x00008000;
+    // Flowgram fork: local-only marker bit (schema-free, bit 31 is unused by the
+    // TL layer) for messages kept in place after a remote "delete for everyone".
+    public static final int MESSAGE_FLAG_KEPT_DELETED        = 0x80000000;
 
     public static final int LAYER = 229;
 

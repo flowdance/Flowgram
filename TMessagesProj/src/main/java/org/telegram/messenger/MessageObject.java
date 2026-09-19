@@ -9888,6 +9888,12 @@ public class MessageObject {
         return messageOwner != null && (messageOwner.flags & TLRPC.MESSAGE_FLAG_EDITED) != 0 && messageOwner.edit_date != 0 && !messageOwner.edit_hide;
     }
 
+    // Flowgram fork: true when the message was deleted for everyone on the
+    // server but kept locally by the keep-deleted-messages option.
+    public boolean isKeptDeleted() {
+        return messageOwner != null && (messageOwner.flags & TLRPC.MESSAGE_FLAG_KEPT_DELETED) != 0;
+    }
+
     public boolean isContentUnread() {
         return messageOwner.media_unread;
     }
