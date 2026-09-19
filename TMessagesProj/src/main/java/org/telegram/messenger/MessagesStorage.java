@@ -4780,6 +4780,20 @@ public class MessagesStorage extends BaseController {
                             FlowgramVoDiag.log(currentAccount, "EMPTY-MEDIA-ROW-BEFORE", dialogId, message.id,
                                     FlowgramVoDiag.media(message) + " " + FlowgramVoDiag.fileState(currentAccount, message));
                         }
+                        // Flowgram fork: final per-message protection — covers
+                        // destruction tasks queued before the option was
+                        // enabled and any legacy task. Runs before
+                        // addFilesToDelete, download cancellation, media
+                        // mutation, the database rewrite and the UI clear
+                        // notification; the rest of a mixed batch is still
+                        // processed normally.
+                        if (isKeptSelfDestructMedia(message, dialogId)) {
+                            if (FlowgramVoDiag.enabled()) {
+                                FlowgramVoDiag.log(currentAccount, "EMPTY-MEDIA-SKIPPED-BY-KEEP", dialogId, message.id,
+                                        FlowgramVoDiag.media(message) + " " + FlowgramVoDiag.trackedFileState(currentAccount, dialogId, message.id));
+                            }
+                            continue;
+                        }
                         if (message.media != null) {
                             if (!addFilesToDelete(message, filesToDelete, idsToDelete, namesToDelete, true)) {
                                 continue;
@@ -14440,6 +14454,33 @@ public class MessagesStorage extends BaseController {
         }
     }
 
+    // Flowgram fork: normal-chat self-destruct media covered by the
+    // keep-view-once option. The decision reads the SERIALIZED message
+    // (media ttl + a still-valid media type), because the messages_v2 ttl
+    // column is zeroed by createTaskForSecretMedia once a destruction task
+    // exists. Secret chats are excluded by message type and by dialog —
+    // a "Secret"-named caller does not imply a secret-chat message. Used
+    // both when read events would create destruction tasks and as the
+    // final per-message protection inside emptyMessagesMedia, so the entry
+    // guard and the final guard can never disagree.
+    private static boolean isKeptSelfDestructMedia(TLRPC.Message message, long dialogId) {
+        if (!NaConfig.INSTANCE.getKeepViewOnceMedia().Bool()
+                || message == null
+                || message instanceof TLRPC.TL_message_secret
+                || DialogObject.isEncryptedDialog(dialogId)) {
+            return false;
+        }
+        TLRPC.MessageMedia media = message.media;
+        if (media == null || (media.ttl_seconds == 0 && message.ttl == 0)) {
+            return false;
+        }
+        boolean validPhoto = media instanceof TLRPC.TL_messageMediaPhoto
+                && media.photo != null && !(media.photo instanceof TLRPC.TL_photoEmpty);
+        boolean validDocument = media instanceof TLRPC.TL_messageMediaDocument
+                && media.document != null && !(media.document instanceof TLRPC.TL_documentEmpty);
+        return validPhoto || validDocument;
+    }
+
     private void markMessagesContentAsReadInternal(long dialogId, ArrayList<Integer> mids, int date) {
         SQLiteCursor cursor = null;
         try {
@@ -14542,7 +14583,7 @@ public class MessagesStorage extends BaseController {
                 try {
                     LongSparseArray<ArrayList<Integer>> toDelete = new LongSparseArray<>();
                     LongSparseArray<SparseArray<ArrayList<Integer>>> toTask = new LongSparseArray<>();
-                    cursor = database.queryFinalized(String.format(Locale.US, "SELECT uid, mid, ttl FROM messages_v2 WHERE mid IN (%s) AND is_channel = 0", TextUtils.join(",", mids)));
+                    cursor = database.queryFinalized(String.format(Locale.US, "SELECT uid, mid, ttl, data FROM messages_v2 WHERE mid IN (%s) AND is_channel = 0", TextUtils.join(",", mids)));
                     while (cursor.next()) {
                         long did = cursor.longValue(0);
                         int mid = cursor.intValue(1);
@@ -14554,16 +14595,47 @@ public class MessagesStorage extends BaseController {
                             }
                             arrayList.add(mid);
                         } else {
-                            int date = readDate + ttl;
-                            SparseArray<ArrayList<Integer>> array = toTask.get(did);
-                            if (array == null) {
-                                toTask.put(did, array = new SparseArray<>());
+                            // Flowgram fork: with the keep option on, do not
+                            // create media destruction tasks for normal-chat
+                            // self-destruct media — the read-state handling
+                            // below still runs through the toDelete route.
+                            // The serialized message is the authority: the
+                            // ttl column alone cannot decide this.
+                            boolean blockTask = false;
+                            if (NaConfig.INSTANCE.getKeepViewOnceMedia().Bool() && !DialogObject.isEncryptedDialog(did)) {
+                                NativeByteBuffer rowData = cursor.byteBufferValue(3);
+                                if (rowData != null) {
+                                    try {
+                                        TLRPC.Message rowMessage = TLRPC.Message.TLdeserialize(rowData, rowData.readInt32(false), false);
+                                        blockTask = isKeptSelfDestructMedia(rowMessage, did);
+                                    } catch (Exception e) {
+                                        blockTask = false;
+                                    } finally {
+                                        rowData.reuse();
+                                    }
+                                }
                             }
-                            ArrayList<Integer> msgs = array.get(date);
-                            if (msgs == null) {
-                                array.put(date, msgs = new ArrayList<>());
+                            if (blockTask) {
+                                if (FlowgramVoDiag.enabled()) {
+                                    FlowgramVoDiag.log(currentAccount, "READ-CONTENTS-TASK-BLOCKED-BY-KEEP", did, mid, "ttl=" + ttl);
+                                }
+                                ArrayList<Integer> arrayList = toDelete.get(did);
+                                if (arrayList == null) {
+                                    toDelete.put(did, arrayList = new ArrayList<>());
+                                }
+                                arrayList.add(mid);
+                            } else {
+                                int date = readDate + ttl;
+                                SparseArray<ArrayList<Integer>> array = toTask.get(did);
+                                if (array == null) {
+                                    toTask.put(did, array = new SparseArray<>());
+                                }
+                                ArrayList<Integer> msgs = array.get(date);
+                                if (msgs == null) {
+                                    array.put(date, msgs = new ArrayList<>());
+                                }
+                                msgs.add(mid);
                             }
-                            msgs.add(mid);
                         }
                     }
                     cursor.dispose();

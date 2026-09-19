@@ -29,3 +29,4 @@ TMessagesProj_AppHuawei/afat/
 TMessagesProj/jni/ffmpeg/build_android
 TMessagesProj/release.keystore
 logs.zip
+logs*.zip
