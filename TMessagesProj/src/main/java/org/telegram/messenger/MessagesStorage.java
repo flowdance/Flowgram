@@ -16433,14 +16433,16 @@ public class MessagesStorage extends BaseController {
                 || (media instanceof TLRPC.TL_messageMediaDocument && (media.document == null || media.document instanceof TLRPC.TL_documentEmpty));
     }
 
-    // Flowgram fork: load the stored full media for a view-once message.
-    // Runs on the storage thread and must not touch the incoming message —
-    // only read the database and return the stored media (or null).
-    private TLRPC.MessageMedia loadKeptViewOnceMedia(int mid, long dialogId) {
+    // Flowgram fork: load the stored full message for a view-once message —
+    // media validated by the same whitelist, and the local attach path read
+    // back from the serialized tail. Runs on the storage thread and must not
+    // touch the incoming message — only read the database and return the
+    // stored message (or null).
+    private TLRPC.Message loadKeptViewOnceStoredMessage(int mid, long dialogId) {
         SQLiteCursor cursor = null;
         boolean diag = FlowgramVoDiag.enabled();
         try {
-            cursor = database.queryFinalized(String.format(Locale.US, "SELECT data FROM messages_v2 WHERE mid = %d AND uid = %d", mid, dialogId));
+            cursor = database.queryFinalized(String.format(Locale.US, "SELECT data, send_state, custom_params FROM messages_v2 WHERE mid = %d AND uid = %d", mid, dialogId));
             if (!cursor.next()) {
                 if (diag) {
                     FlowgramVoDiag.log(currentAccount, "LOAD-MISS", dialogId, mid, "reason=no-db-row");
@@ -16483,10 +16485,32 @@ public class MessagesStorage extends BaseController {
                                     FlowgramVoDiag.log(currentAccount, "LOAD-MISS", dialogId, mid, "reason=old-media-not-whitelisted " + FlowgramVoDiag.media(old));
                                 }
                             } else {
+                                // Standard reader order: restore send_state
+                                // from the database BEFORE reading the tail —
+                                // readAttachPath has send_state==3-specific
+                                // parsing for the encoded params.
+                                old.send_state = cursor.intValue(1);
+                                old.readAttachPath(data, getUserConfig().getClientUserId());
+                                // Restore the local custom params onto the
+                                // stored object too (receipt state,
+                                // transcriptions...), so the caller can merge
+                                // them onto the replacement. A failure here
+                                // only degrades to media-only — the media
+                                // restore above is unaffected.
+                                NativeByteBuffer storedParams = cursor.byteBufferValue(2);
+                                if (storedParams != null) {
+                                    try {
+                                        MessageCustomParamsHelper.readLocalParams(old, storedParams);
+                                    } catch (Exception e) {
+                                        FileLog.e(e);
+                                    } finally {
+                                        storedParams.reuse();
+                                    }
+                                }
                                 if (diag) {
                                     FlowgramVoDiag.log(currentAccount, "LOAD-HIT", dialogId, mid, FlowgramVoDiag.media(old) + " " + FlowgramVoDiag.fileState(currentAccount, old));
                                 }
-                                return oldMedia;
+                                return old;
                             }
                         }
                     } finally {
@@ -16505,6 +16529,14 @@ public class MessagesStorage extends BaseController {
             }
         }
         return null;
+    }
+
+    // Flowgram fork: load the stored full media for a view-once message.
+    // Runs on the storage thread and must not touch the incoming message —
+    // only read the database and return the stored media (or null).
+    private TLRPC.MessageMedia loadKeptViewOnceMedia(int mid, long dialogId) {
+        TLRPC.Message stored = loadKeptViewOnceStoredMessage(mid, dialogId);
+        return stored != null ? stored.media : null;
     }
 
     // Flowgram fork: if the incoming message carries an empty (consumed)
@@ -17112,6 +17144,66 @@ public class MessagesStorage extends BaseController {
 
                 if (message.dialog_id == 0) {
                     MessageObject.getDialogId(message);
+                }
+
+                // Flowgram fork: a server file-reference refresh
+                // (FileRefController's getMessages round-trip) can return
+                // the message with its media already consumed server-side
+                // (photoEmpty/documentEmpty/messageMediaEmpty). Writing that
+                // form over the row destroys the kept local copy — the
+                // observed window-outside destruction path (valid row →
+                // FILE_REFERENCE_EXPIRED → getMessages returns photoEmpty →
+                // replaceMessageIfExists stores the empty form → UI stub).
+                // When the keep option is on, this is not a secret chat and
+                // the local row still holds a valid media copy, transplant
+                // the stored media and attach path onto the replacement so
+                // the message keeps its viewable description, locally saved
+                // file, custom params (bound verbatim below, receipt state
+                // included) — BEFORE any serialization or object
+                // construction/publication. Without a valid local copy
+                // nothing is fabricated: the server's empty form is stored
+                // as-is. FileRefController's own result stays null, so this
+                // is never reported as a successful refresh and its
+                // sendErrorToObject path ends the download normally — no
+                // retry loop with the stale reference.
+                if (NaConfig.INSTANCE.getKeepViewOnceMedia().Bool()
+                        && !DialogObject.isEncryptedDialog(message.dialog_id)
+                        && isConsumedViewOnceMediaShape(message)) {
+                    TLRPC.Message stored = loadKeptViewOnceStoredMessage(message.id, message.dialog_id);
+                    if (stored != null) {
+                        message.media = stored.media;
+                        // Tail-restored local attachment info: the attach path
+                        // AND the encoded params map read back by
+                        // readAttachPath — re-serializing the replacement
+                        // would otherwise drop them.
+                        message.attachPath = stored.attachPath;
+                        message.params = stored.params;
+                        // The kept-deleted marking is a local-only bit inside
+                        // the serialized flags — preserve exactly that bit,
+                        // never the whole server flags word.
+                        if ((stored.flags & TLRPC.MESSAGE_FLAG_KEPT_DELETED) != 0) {
+                            message.flags |= TLRPC.MESSAGE_FLAG_KEPT_DELETED;
+                        }
+                        // Restore the local custom params (receipt state,
+                        // transcriptions...) onto the incoming object BEFORE
+                        // the MessageObject below is constructed and
+                        // broadcast: ChatActivity's replaceMessageObjects →
+                        // copyStableParams copies neither the receipt state
+                        // nor other local params (verified against its
+                        // source), so without this the published object would
+                        // show no badge until the next database load even
+                        // though the row below keeps the verbatim blob.
+                        // copyParams merges monotonicly (Math.max for the
+                        // receipt state), so a server-side 0 can never
+                        // downgrade the stored value. The blob bound to the
+                        // statements below is never read — its position and
+                        // lifetime are untouched.
+                        MessageCustomParamsHelper.copyParams(stored, message);
+                        if (FlowgramVoDiag.enabled()) {
+                            FlowgramVoDiag.log(currentAccount, "REPLACE-KEPT-RESTORED", message.dialog_id, message.id,
+                                    FlowgramVoDiag.media(message) + " " + FlowgramVoDiag.fileState(currentAccount, stored));
+                        }
+                    }
                 }
 
                 fixUnsupportedMedia(message);
