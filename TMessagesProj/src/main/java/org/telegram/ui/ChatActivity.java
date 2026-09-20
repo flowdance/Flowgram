@@ -23340,29 +23340,72 @@ public class ChatActivity extends BaseFragment implements
                     }
                 }
             }
-            if (chatMode == MODE_SCHEDULED) {
+            if (chatMode == MODE_SCHEDULED
+                    || chatMode == MODE_QUICK_REPLIES
+                    || chatMode == MODE_WELCOME_MESSAGES
+                    || currentEncryptedChat != null) {
                 return;
             }
             ArrayList<Integer> markAsDeletedMessages = (ArrayList<Integer>) args[0];
             long channelId = (Long) args[1];
+            // Mirror processDeletedMessages(): channel and non-channel
+            // message ids live in different id spaces. A non-channel event
+            // may only touch the migrated basic-group history
+            // (messagesDict[1]) of a supergroup, a channel event only its
+            // own channel's history (messagesDict[0]); there is no
+            // cross-dictionary fallback, so a numeric mid collision can
+            // never mark an unrelated message.
+            int loadIndex;
             if (ChatObject.isChannel(currentChat)) {
-                if (channelId != 0 && channelId != -dialog_id) {
+                if (channelId == 0 && mergeDialogId != 0) {
+                    loadIndex = 1;
+                } else if (channelId == -dialog_id) {
+                    loadIndex = 0;
+                } else {
                     return;
                 }
             } else if (channelId != 0) {
                 return;
+            } else {
+                loadIndex = 0;
             }
             boolean changed = false;
             for (int a = 0, size = markAsDeletedMessages.size(); a < size; a++) {
                 Integer mid = markAsDeletedMessages.get(a);
-                MessageObject obj = messagesDict[0].get(mid);
-                if (obj == null) {
-                    obj = messagesDict[1].get(mid);
-                }
+                MessageObject obj = messagesDict[loadIndex].get(mid);
                 if (obj != null && obj.messageOwner != null) {
                     obj.messageOwner.flags |= TLRPC.MESSAGE_FLAG_KEPT_DELETED;
                     obj.forceUpdate = true;
                     changed = true;
+                }
+            }
+            // Filtered/search results hold MessageObject instances built
+            // separately from the database (updateFilteredMessages() only
+            // copies stable params, it never replaces the instances), so
+            // they must be marked on their own — including search hits that
+            // are not loaded into the main list yet. Validate each result by
+            // its real dialog so the event's id space is honored: in a
+            // supergroup a non-channel event may only match merge-history
+            // results (dialog_id == mergeDialogId) and a channel event only
+            // its own dialog; in a non-channel chat only the chat itself.
+            if (chatAdapter != null && chatAdapter.isFiltered && !chatAdapter.filteredMessages.isEmpty()) {
+                for (int a = 0, size = chatAdapter.filteredMessages.size(); a < size; a++) {
+                    MessageObject obj = chatAdapter.filteredMessages.get(a);
+                    if (obj == null || obj.messageOwner == null || !markAsDeletedMessages.contains(obj.getId())) {
+                        continue;
+                    }
+                    long msgDialogId = obj.getDialogId();
+                    boolean spaceMatches;
+                    if (channelId == 0) {
+                        spaceMatches = ChatObject.isChannel(currentChat) ? msgDialogId == mergeDialogId : msgDialogId == dialog_id;
+                    } else {
+                        spaceMatches = msgDialogId == -channelId;
+                    }
+                    if (spaceMatches) {
+                        obj.messageOwner.flags |= TLRPC.MESSAGE_FLAG_KEPT_DELETED;
+                        obj.forceUpdate = true;
+                        changed = true;
+                    }
                 }
             }
             if (changed) {

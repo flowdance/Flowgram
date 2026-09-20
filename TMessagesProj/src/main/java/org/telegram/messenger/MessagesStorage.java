@@ -4880,7 +4880,13 @@ public class MessagesStorage extends BaseController {
                         state.bindLong(16, MessageObject.getChannelId(message));
                         NativeByteBuffer customParams = MessageCustomParamsHelper.writeLocalParams(message);
                         if (customParams != null) {
-                            state.bindByteBuffer(16, customParams);
+                            // Flowgram fork: bind to parameter 17 (the
+                            // custom_params column). Binding to 16 would
+                            // overwrite the is_channel column with the blob
+                            // and leave custom_params unwritten — every
+                            // reader selects custom_params, and the kept-
+                            // deleted marking filters on is_channel = 0.
+                            state.bindByteBuffer(17, customParams);
                         } else {
                             state.bindNull(17);
                         }
@@ -15928,27 +15934,31 @@ public class MessagesStorage extends BaseController {
         storageQueue.postRunnable(() -> {
             SQLiteCursor cursor = null;
             SQLitePreparedStatement state = null;
+            ArrayList<Object[]> updates = new ArrayList<>();
             try {
                 String ids = TextUtils.join(",", messages);
-                ArrayList<Object[]> updates = new ArrayList<>();
                 if (dialogId != 0) {
-                    cursor = database.queryFinalized(String.format(Locale.US, "SELECT uid, 0, mid, data FROM messages_v2 WHERE mid IN(%s) AND uid = %d", ids, dialogId));
+                    cursor = database.queryFinalized(String.format(Locale.US, "SELECT uid, 0, mid, data, send_state FROM messages_v2 WHERE mid IN(%s) AND uid = %d", ids, dialogId));
                 } else {
-                    cursor = database.queryFinalized(String.format(Locale.US, "SELECT uid, 0, mid, data FROM messages_v2 WHERE mid IN(%s) AND is_channel = 0", ids));
+                    cursor = database.queryFinalized(String.format(Locale.US, "SELECT uid, 0, mid, data, send_state FROM messages_v2 WHERE mid IN(%s) AND is_channel = 0", ids));
                 }
                 collectKeptDeletedUpdates(cursor, updates);
                 cursor.dispose();
                 cursor = null;
                 if (dialogId != 0) {
-                    cursor = database.queryFinalized(String.format(Locale.US, "SELECT uid, topic_id, mid, data FROM messages_topics WHERE mid IN(%s) AND uid = %d", ids, dialogId));
+                    cursor = database.queryFinalized(String.format(Locale.US, "SELECT uid, topic_id, mid, data, send_state FROM messages_topics WHERE mid IN(%s) AND uid = %d", ids, dialogId));
                 } else {
-                    cursor = database.queryFinalized(String.format(Locale.US, "SELECT uid, topic_id, mid, data FROM messages_topics WHERE mid IN(%s) AND is_channel = 0", ids));
+                    cursor = database.queryFinalized(String.format(Locale.US, "SELECT uid, topic_id, mid, data, send_state FROM messages_topics WHERE mid IN(%s) AND is_channel = 0", ids));
                 }
                 collectKeptDeletedUpdates(cursor, updates);
                 cursor.dispose();
                 cursor = null;
                 if (!updates.isEmpty()) {
-                    for (Object[] update : updates) {
+                    for (int i = 0, N = updates.size(); i < N; i++) {
+                        Object[] update = updates.get(i);
+                        if (update == null) {
+                            continue;
+                        }
                         long uid = (long) update[0];
                         int topicId = (int) update[1];
                         int mid = (int) update[2];
@@ -15971,12 +15981,23 @@ public class MessagesStorage extends BaseController {
                             state = null;
                         } finally {
                             buffer.reuse();
+                            // Flowgram fork: null the slot so the outer
+                            // finally only reuses buffers that were not
+                            // processed when an exception interrupts the
+                            // batch — no leak, no double reuse.
+                            updates.set(i, null);
                         }
                     }
                 }
             } catch (Exception e) {
                 checkSQLException(e);
             } finally {
+                for (int i = 0, N = updates.size(); i < N; i++) {
+                    Object[] update = updates.get(i);
+                    if (update != null) {
+                        ((NativeByteBuffer) update[3]).reuse();
+                    }
+                }
                 if (cursor != null) {
                     cursor.dispose();
                 }
@@ -16220,9 +16241,24 @@ public class MessagesStorage extends BaseController {
                 if (message == null) {
                     continue;
                 }
+                // Flowgram fork: the bytes after the serialized TL body carry
+                // local attachment info (attachPath / params). They are
+                // written by writeAttachPath() inside serializeToStream()
+                // and can only be read back through readAttachPath(), with
+                // the database send_state feeding the read gate — exactly
+                // like every other messages_v2 / messages_topics reader.
+                // Skipping this would rewrite the row with the tail
+                // stripped, losing the attach path and local params.
+                message.send_state = cursor.intValue(4);
+                message.readAttachPath(data, getUserConfig().getClientUserId());
                 message.flags |= TLRPC.MESSAGE_FLAG_KEPT_DELETED;
                 NativeByteBuffer buffer = new NativeByteBuffer(message.getObjectSize());
-                message.serializeToStream(buffer);
+                try {
+                    message.serializeToStream(buffer);
+                } catch (Exception e) {
+                    buffer.reuse();
+                    throw e;
+                }
                 updates.add(new Object[]{uid, topicId, mid, buffer});
             } finally {
                 data.reuse();
