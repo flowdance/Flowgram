@@ -21687,12 +21687,11 @@ public class MessagesController extends BaseController implements NotificationCe
                 // Flowgram fork: non-zero keys here come only from
                 // updateChannelReadMessagesContents — a server-side content
                 // read (another device consumed the media, or the echo of
-                // our own request). The key == 0 case is confirmed inside
+                // our own request). Confirmed as ONE batched update per
+                // dialog. The key == 0 case is confirmed inside
                 // MessagesStorage after resolving the dialog per row.
                 if (key != 0) {
-                    for (int b = 0, N2 = arrayList.size(); b < N2; b++) {
-                        getMessagesStorage().updateFlowgramViewedReceiptState(key, arrayList.get(b), 2);
-                    }
+                    getMessagesStorage().updateFlowgramViewedReceiptStates(key, arrayList, 2);
                 }
             }
         }
