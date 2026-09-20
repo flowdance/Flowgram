@@ -6689,7 +6689,13 @@ public class AndroidUtilities {
 
     public static String getBuildVersionInfo() {
         String[] abi = Build.SUPPORTED_ABIS[0].toLowerCase(Locale.ROOT).split("-");
-        return "Flowgram v" + BuildConfig.VERSION_NAME + " (" + BuildConfig.BUILD_TIMESTAMP + ") " + abi[abi.length - 1];
+        // Flowgram fork: show the same Beijing-time build stamp the APK file
+        // name carries (yyMMddHHmmss) instead of raw epoch milliseconds.
+        // Display-only — SharedConfig compares BUILD_TIMESTAMP as a raw long
+        // for update checks, which stays untouched.
+        java.text.SimpleDateFormat format = new java.text.SimpleDateFormat("yyMMddHHmmss", Locale.US);
+        format.setTimeZone(java.util.TimeZone.getTimeZone("Asia/Shanghai"));
+        return "Flowgram v" + BuildConfig.VERSION_NAME + " (" + format.format(new Date(BuildConfig.BUILD_TIMESTAMP)) + ") " + abi[abi.length - 1];
 //        try {
 //            PackageInfo pInfo = ApplicationLoader.applicationContext.getPackageManager().getPackageInfo(ApplicationLoader.applicationContext.getPackageName(), 0);
 //            int code = pInfo.versionCode / 10;
