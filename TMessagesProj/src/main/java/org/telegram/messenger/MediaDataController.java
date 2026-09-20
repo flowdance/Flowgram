@@ -118,6 +118,7 @@ import tw.nekomimi.nekogram.DialogConfig;
 import tw.nekomimi.nekogram.NekoConfig;
 import tw.nekomimi.nekogram.ui.PinnedStickerHelper;
 import xyz.nextalone.nagram.NaConfig;
+import xyz.nextalone.nagram.NaConfig;
 import xyz.nextalone.nagram.helper.ExternalStickerCacheHelper;
 
 @SuppressWarnings("unchecked")
@@ -3793,6 +3794,41 @@ public class MediaDataController extends BaseController {
                 m.isSavedFiltered = true;
                 searchResultMessages.add(m);
                 messageIds.add(m.getId());
+            }
+        }
+        // Flowgram fork: server search results are fresh MessageObjects that
+        // never went through a database load, so they carry no persisted
+        // consumption-receipt state. Ask storage for the persisted states of
+        // incoming flash-media candidates; matches come back as
+        // flowgramViewedReceiptUpdated events (no write, idempotent).
+        if (NaConfig.INSTANCE.getKeepViewOnceMedia().Bool()) {
+            LongSparseArray<ArrayList<Integer>> receiptCandidates = null;
+            for (int i = 0; i < searchResultMessages.size(); ++i) {
+                MessageObject m = searchResultMessages.get(i);
+                if (m == null || m.messageOwner == null || m.isOut()
+                        || m.messageOwner.flowgramViewedReceiptState >= 2
+                        || !(m.messageOwner instanceof TLRPC.TL_message)) {
+                    continue;
+                }
+                TLRPC.MessageMedia media = MessageObject.getMedia(m.messageOwner);
+                if (media == null || media.ttl_seconds == 0) {
+                    continue;
+                }
+                if (receiptCandidates == null) {
+                    receiptCandidates = new LongSparseArray<>();
+                }
+                long did = m.getDialogId();
+                ArrayList<Integer> mids = receiptCandidates.get(did);
+                if (mids == null) {
+                    mids = new ArrayList<>();
+                    receiptCandidates.put(did, mids);
+                }
+                mids.add(m.getId());
+            }
+            if (receiptCandidates != null) {
+                for (int i = 0, N = receiptCandidates.size(); i < N; i++) {
+                    getMessagesStorage().mergeFlowgramViewedReceiptStates(receiptCandidates.keyAt(i), receiptCandidates.valueAt(i));
+                }
             }
         }
     }

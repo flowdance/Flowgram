@@ -57558,6 +57558,11 @@ public class TLRPC {
         public InputQuickReplyShortcut quick_reply_shortcut; //custom
         public long errorAllowedPriceStars; //custom
         public long errorNewPriceStars; //custom
+        // Flowgram fork: consumption-receipt state for a kept incoming
+        // self-destruct media message (0 = none, 1 = receipt sent but not
+        // yet accepted by the server, 2 = confirmed). Persisted in the
+        // custom_params blob, never serialized into the protocol body.
+        public int flowgramViewedReceiptState; //custom
         public boolean summarizedOpen; //custom
         public TL_textWithEntities summaryText; //custom
         public String translatedSummaryLanguage; //custom

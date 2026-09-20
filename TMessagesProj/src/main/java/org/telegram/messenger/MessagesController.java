@@ -14800,6 +14800,12 @@ public class MessagesController extends BaseController implements NotificationCe
             newTaskId = taskId;
         }
         int time = getConnectionsManager().getCurrentTime();
+        // Flowgram fork: our own consumption receipt for a kept flash-media
+        // message is being sent — mark the receipt state as pending until
+        // the server accepts it (see the onResponse handlers below). Covers
+        // every local consumption entry (photo viewer, deferred countdown,
+        // pending-task replay after restart).
+        getMessagesStorage().updateFlowgramViewedReceiptState(dialogId, mid, 1);
         if (createDeleteTask) {
             getMessagesStorage().createTaskForMid(dialogId, mid, time, time, ttl, false);
         }
@@ -14808,6 +14814,10 @@ public class MessagesController extends BaseController implements NotificationCe
             req.channel = inputChannel;
             req.id.add(mid);
             getConnectionsManager().sendRequest(req, (response, error) -> {
+                if (error == null) {
+                    // Flowgram fork: the server accepted our view receipt.
+                    getMessagesStorage().updateFlowgramViewedReceiptState(dialogId, mid, 2);
+                }
                 if (newTaskId != 0) {
                     getMessagesStorage().removePendingTask(newTaskId);
                 }
@@ -14817,6 +14827,8 @@ public class MessagesController extends BaseController implements NotificationCe
             req.id.add(mid);
             getConnectionsManager().sendRequest(req, (response, error) -> {
                 if (error == null) {
+                    // Flowgram fork: the server accepted our view receipt.
+                    getMessagesStorage().updateFlowgramViewedReceiptState(dialogId, mid, 2);
                     TLRPC.TL_messages_affectedMessages res = (TLRPC.TL_messages_affectedMessages) response;
                     processNewDifferenceParams(-1, res.pts, -1, res.pts_count);
                 }
@@ -21672,6 +21684,16 @@ public class MessagesController extends BaseController implements NotificationCe
                 long key = markContentAsReadMessages.keyAt(a);
                 ArrayList<Integer> arrayList = markContentAsReadMessages.valueAt(a);
                 getMessagesStorage().markMessagesContentAsRead(key, arrayList, currentTime2, markContentAsReadMessagesDate);
+                // Flowgram fork: non-zero keys here come only from
+                // updateChannelReadMessagesContents — a server-side content
+                // read (another device consumed the media, or the echo of
+                // our own request). The key == 0 case is confirmed inside
+                // MessagesStorage after resolving the dialog per row.
+                if (key != 0) {
+                    for (int b = 0, N2 = arrayList.size(); b < N2; b++) {
+                        getMessagesStorage().updateFlowgramViewedReceiptState(key, arrayList.get(b), 2);
+                    }
+                }
             }
         }
         if (deletedMessages != null && !NaConfig.INSTANCE.getKeepDeletedMessages().Bool()) {

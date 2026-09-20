@@ -3171,6 +3171,7 @@ public class ChatActivity extends BaseFragment implements
             .add(NotificationCenter.closeChatActivity)
             .add(NotificationCenter.messagesDeleted)
             .add(NotificationCenter.messagesDeletedKept)
+            .add(NotificationCenter.flowgramViewedReceiptUpdated)
             .add(NotificationCenter.historyCleared)
             .add(NotificationCenter.messageReceivedByServer)
             .add(NotificationCenter.messageReceivedByAck)
@@ -23362,6 +23363,77 @@ public class ChatActivity extends BaseFragment implements
                     obj.messageOwner.flags |= TLRPC.MESSAGE_FLAG_KEPT_DELETED;
                     obj.forceUpdate = true;
                     changed = true;
+                }
+            }
+            if (changed) {
+                updateVisibleRows();
+            }
+        } else if (id == NotificationCenter.flowgramViewedReceiptUpdated) {
+            // Flowgram fork: the consumption-receipt state of a kept flash-
+            // media message changed (receipt sent -> pending, or confirmed
+            // by the server). Update the bound message objects and redraw.
+            long eventDialogId = (long) args[1];
+            if ((int) args[0] != currentAccount
+                    || DialogObject.isEncryptedDialog(eventDialogId)
+                    || chatMode == MODE_SCHEDULED
+                    || chatMode == MODE_QUICK_REPLIES
+                    || chatMode == MODE_WELCOME_MESSAGES) {
+                return;
+            }
+            int receiptMid = (int) args[2];
+            int receiptState = (int) args[3];
+            // Select the dictionary by the event dialog: the main dict for
+            // this dialog, the migrated-history dict for mergeDialogId.
+            // No cross-dict fallback — an object is only updated when its
+            // own dialogId matches the event.
+            SparseArray<MessageObject> receiptDict;
+            if (eventDialogId == dialog_id) {
+                receiptDict = messagesDict[0];
+            } else if (mergeDialogId != 0 && eventDialogId == mergeDialogId) {
+                receiptDict = messagesDict[1];
+            } else {
+                return;
+            }
+            boolean changed = false;
+            MessageObject messageObject = receiptDict.get(receiptMid);
+            if (messageObject != null
+                    && messageObject.messageOwner != null
+                    && !messageObject.isOut()
+                    && messageObject.getDialogId() == eventDialogId
+                    && messageObject.messageOwner.flowgramViewedReceiptState < receiptState) {
+                messageObject.messageOwner.flowgramViewedReceiptState = receiptState;
+                messageObject.forceUpdate = true;
+                changed = true;
+            }
+            // Search/filter results hold separate MessageObject instances
+            // (server search results never went through a database load);
+            // match by account + dialogId + mid here too.
+            ArrayList<MessageObject> searchResults = getMediaDataController().searchResultMessages;
+            for (int a = 0, N = searchResults.size(); a < N; a++) {
+                MessageObject result = searchResults.get(a);
+                if (result != null && result.messageOwner != null && !result.isOut()
+                        && result.getId() == receiptMid
+                        && result.getDialogId() == eventDialogId
+                        && result.messageOwner.flowgramViewedReceiptState < receiptState) {
+                    result.messageOwner.flowgramViewedReceiptState = receiptState;
+                    result.forceUpdate = true;
+                    changed = true;
+                }
+            }
+            // The adapter's displayed rows may contain grouped/extra
+            // instances beyond the source lists above (e.g. album
+            // supplements); update every visible matching object.
+            if (chatAdapter != null) {
+                for (int a = 0, N = chatAdapter.filteredMessages.size(); a < N; a++) {
+                    MessageObject result = chatAdapter.filteredMessages.get(a);
+                    if (result != null && result.messageOwner != null && !result.isOut()
+                            && result.getId() == receiptMid
+                            && result.getDialogId() == eventDialogId
+                            && result.messageOwner.flowgramViewedReceiptState < receiptState) {
+                        result.messageOwner.flowgramViewedReceiptState = receiptState;
+                        result.forceUpdate = true;
+                        changed = true;
+                    }
                 }
             }
             if (changed) {

@@ -5706,6 +5706,139 @@ public class MessagesStorage extends BaseController {
         });
     }
 
+    // Flowgram fork: read the full stored message (serialized body +
+    // custom params) from ONE table; null when the row is absent or the
+    // body cannot be deserialized. getMessageWithCustomParamsOnlyInternal
+    // cannot be used here because it only reads custom_params and returns
+    // a fresh empty message when the row is missing.
+    private TLRPC.Message getMessageWithMediaAndCustomParamsInternal(int messageId, long dialogId, String table) {
+        SQLiteCursor cursor = null;
+        try {
+            cursor = database.queryFinalized("SELECT data, custom_params FROM " + table + " WHERE mid = ? AND uid = ?", messageId, dialogId);
+            if (cursor.next()) {
+                NativeByteBuffer data = cursor.byteBufferValue(0);
+                if (data == null) {
+                    return null;
+                }
+                TLRPC.Message message;
+                try {
+                    message = TLRPC.Message.TLdeserialize(data, data.readInt32(false), false);
+                } finally {
+                    data.reuse();
+                }
+                if (message == null) {
+                    return null;
+                }
+                NativeByteBuffer customParams = cursor.byteBufferValue(1);
+                if (customParams != null) {
+                    try {
+                        MessageCustomParamsHelper.readLocalParams(message, customParams);
+                    } finally {
+                        customParams.reuse();
+                    }
+                }
+                return message;
+            }
+        } catch (SQLiteException e) {
+            checkSQLException(e);
+        } finally {
+            if (cursor != null) {
+                cursor.dispose();
+            }
+        }
+        return null;
+    }
+
+    // Flowgram fork: update the persisted consumption-receipt state of a
+    // kept incoming self-destruct media message (0 = none, 1 = receipt
+    // sent, not yet accepted by the server, 2 = confirmed by the server).
+    // Strictly monotonic per table: a late pending or a duplicate
+    // notification can never downgrade a confirmed state. Persisted in
+    // each table's custom_params blob — survives rewrites, reloads and
+    // restarts, and is isolated per account (per-account database), dialog
+    // and message id. Each table row keeps its OWN existing params (the
+    // other local params of the two rows may legitimately differ).
+    public void updateFlowgramViewedReceiptState(long dialogId, int mid, int newState) {
+        if (!NaConfig.INSTANCE.getKeepViewOnceMedia().Bool()) {
+            return;
+        }
+        storageQueue.postRunnable(() -> {
+            boolean changed = false;
+            try {
+                database.beginTransaction();
+                for (int i = 0; i < 2; i++) {
+                    String table = i == 0 ? "messages_v2" : "messages_topics";
+                    TLRPC.Message message = getMessageWithMediaAndCustomParamsInternal(mid, dialogId, table);
+                    if (message == null || message.out || !isKeptSelfDestructMedia(message, dialogId)
+                            || newState <= message.flowgramViewedReceiptState) {
+                        continue;
+                    }
+                    message.flowgramViewedReceiptState = newState;
+                    SQLitePreparedStatement state = null;
+                    NativeByteBuffer nativeByteBuffer = null;
+                    try {
+                        state = database.executeFast("UPDATE " + table + " SET custom_params = ? WHERE mid = ? AND uid = ?");
+                        state.requery();
+                        nativeByteBuffer = MessageCustomParamsHelper.writeLocalParams(message);
+                        if (nativeByteBuffer != null) {
+                            state.bindByteBuffer(1, nativeByteBuffer);
+                        } else {
+                            state.bindNull(1);
+                        }
+                        state.bindInteger(2, mid);
+                        state.bindLong(3, dialogId);
+                        state.step();
+                        changed = true;
+                    } finally {
+                        if (state != null) {
+                            state.dispose();
+                        }
+                        if (nativeByteBuffer != null) {
+                            nativeByteBuffer.reuse();
+                        }
+                    }
+                }
+                database.commitTransaction();
+                if (changed) {
+                    getNotificationCenter().postNotificationNameOnUIThread(NotificationCenter.flowgramViewedReceiptUpdated, currentAccount, dialogId, mid, newState);
+                }
+            } catch (Exception e) {
+                checkSQLException(e);
+            } finally {
+                if (database != null) {
+                    database.commitTransaction();
+                }
+            }
+        });
+    }
+
+    // Flowgram fork: look up already-persisted consumption-receipt states
+    // for freshly generated search-result messages (server search results
+    // are new MessageObjects that never went through a database load) and
+    // fan the matches out as update events, so the search instances
+    // converge with the persisted state without any database write.
+    public void mergeFlowgramViewedReceiptStates(long dialogId, ArrayList<Integer> mids) {
+        if (!NaConfig.INSTANCE.getKeepViewOnceMedia().Bool()) {
+            return;
+        }
+        storageQueue.postRunnable(() -> {
+            try {
+                for (int a = 0, N = mids.size(); a < N; a++) {
+                    int mid = mids.get(a);
+                    TLRPC.Message message = getMessageWithMediaAndCustomParamsInternal(mid, dialogId, "messages_v2");
+                    if (message == null) {
+                        message = getMessageWithMediaAndCustomParamsInternal(mid, dialogId, "messages_topics");
+                    }
+                    if (message != null && message.flowgramViewedReceiptState > 0) {
+                        getNotificationCenter().postNotificationNameOnUIThread(NotificationCenter.flowgramViewedReceiptUpdated, currentAccount, dialogId, mid, message.flowgramViewedReceiptState);
+                    }
+                }
+            } catch (Exception e) {
+                checkSQLException(e);
+            }
+        });
+    }
+
     public TLRPC.Message getMessageWithCustomParamsOnlyInternal(int messageId, long dialogId) {
         TLRPC.Message message = new TLRPC.TL_message();
         SQLiteCursor cursor = null;
@@ -12668,6 +12801,13 @@ public class MessagesStorage extends BaseController {
                 }
 
                 int downloadMediaMask = 0;
+                // Flowgram fork: batch-load persisted consumption-receipt states
+                // for this incoming batch from the actual target tables, so the
+                // REPLACE writes below can merge them by message identity.
+                // One indexed query per table per batch — no per-message
+                // lookups, no cache whose miss could be mistaken for "no
+                // state exists" (cold start / registry-free).
+                LongSparseArray<SparseIntArray> flowgramPersistedStates = loadFlowgramReceiptStatesInternal(messages);
                 for (int a = 0; a < messages.size(); a++) {
                     TLRPC.Message message = messages.get(a);
                     if (message == null) {
@@ -12803,6 +12943,30 @@ public class MessagesStorage extends BaseController {
                         }
                         statement.bindLong(pointer++, MessageObject.getChannelId(message));
                         NativeByteBuffer customParams = MessageCustomParamsHelper.writeLocalParams(message);
+                        // Flowgram fork: this ArrayList REPLACE path does not
+                        // re-read stored custom params (unlike the
+                        // messages_Messages overload and replaceMessageIfExists),
+                        // so an incoming message with a stale/empty state
+                        // could wipe an already-persisted one. Merge by message
+                        // identity against the batch-loaded persisted states
+                        // (read from the actual target tables before the write
+                        // loop — one query per table per batch). NOT gated on
+                        // the keep-view-once toggle and NOT on the incoming
+                        // media still carrying a ttl — preserving an
+                        // already-persisted state must survive both. The
+                        // media-keeping behavior itself is unchanged.
+                        if (!message.out && message.flowgramViewedReceiptState < 2
+                                && flowgramPersistedStates != null) {
+                            SparseIntArray persistedForDialog = flowgramPersistedStates.get(dialogId);
+                            int persistedState = persistedForDialog != null ? persistedForDialog.get(messageId, 0) : 0;
+                            if (persistedState > message.flowgramViewedReceiptState) {
+                                message.flowgramViewedReceiptState = persistedState;
+                                if (customParams != null) {
+                                    customParams.reuse();
+                                }
+                                customParams = MessageCustomParamsHelper.writeLocalParams(message);
+                            }
+                        }
                         if (customParams != null) {
                             statement.bindByteBuffer(pointer++, customParams);
                         } else {
@@ -14463,6 +14627,85 @@ public class MessagesStorage extends BaseController {
     // both when read events would create destruction tasks and as the
     // final per-message protection inside emptyMessagesMedia, so the entry
     // guard and the final guard can never disagree.
+    // Flowgram fork: batch-load the persisted consumption-receipt states
+    // for an incoming message batch from the actual target tables
+    // (dialogId -> mid -> state, max across tables; one query per table per
+    // batch, no per-message lookups). Only the receipt-state int is read —
+    // other local params are never carried across tables. There is no
+    // cache whose miss could be mistaken for "no state exists".
+    private LongSparseArray<SparseIntArray> loadFlowgramReceiptStatesInternal(ArrayList<TLRPC.Message> messages) {
+        HashSet<String> batchKeys = null;
+        ArrayList<Integer> mids = null;
+        for (int a = 0, N = messages.size(); a < N; a++) {
+            TLRPC.Message message = messages.get(a);
+            if (message == null || message.out || message.id == 0 || message.dialog_id == 0) {
+                continue;
+            }
+            if (batchKeys == null) {
+                batchKeys = new HashSet<>();
+                mids = new ArrayList<>();
+            }
+            int rowMid = message.local_id != 0 ? message.local_id : message.id;
+            batchKeys.add(message.dialog_id + ":" + rowMid);
+            mids.add(rowMid);
+        }
+        if (mids == null) {
+            return null;
+        }
+        LongSparseArray<SparseIntArray> result = null;
+        SQLiteCursor cursor = null;
+        try {
+            String midList = TextUtils.join(",", mids);
+            for (int t = 0; t < 2; t++) {
+                String table = t == 0 ? "messages_v2" : "messages_topics";
+                cursor = database.queryFinalized("SELECT mid, uid, custom_params FROM " + table + " WHERE mid IN (" + midList + ")");
+                while (cursor.next()) {
+                    int mid = cursor.intValue(0);
+                    long uid = cursor.longValue(1);
+                    if (!batchKeys.contains(uid + ":" + mid)) {
+                        continue;
+                    }
+                    NativeByteBuffer customParams = cursor.byteBufferValue(2);
+                    if (customParams == null) {
+                        continue;
+                    }
+                    int state = 0;
+                    try {
+                        TLRPC.Message paramsHolder = new TLRPC.TL_message();
+                        MessageCustomParamsHelper.readLocalParams(paramsHolder, customParams);
+                        state = paramsHolder.flowgramViewedReceiptState;
+                    } catch (Exception e) {
+                        // unreadable params must never break storing messages
+                        state = 0;
+                    } finally {
+                        customParams.reuse();
+                    }
+                    if (state <= 0) {
+                        continue;
+                    }
+                    if (result == null) {
+                        result = new LongSparseArray<>();
+                    }
+                    SparseIntArray states = result.get(uid);
+                    if (states == null) {
+                        states = new SparseIntArray();
+                        result.put(uid, states);
+                    }
+                    states.put(mid, Math.max(state, states.get(mid, 0)));
+                }
+                cursor.dispose();
+                cursor = null;
+            }
+        } catch (SQLiteException e) {
+            checkSQLException(e);
+        } finally {
+            if (cursor != null) {
+                cursor.dispose();
+            }
+        }
+        return result;
+    }
+
     private static boolean isKeptSelfDestructMedia(TLRPC.Message message, long dialogId) {
         if (!NaConfig.INSTANCE.getKeepViewOnceMedia().Bool()
                 || message == null
@@ -14588,6 +14831,13 @@ public class MessagesStorage extends BaseController {
                         long did = cursor.longValue(0);
                         int mid = cursor.intValue(1);
                         int ttl = cursor.intValue(2);
+                        // Flowgram fork: this branch is reached only from the
+                        // server update processor (updateReadMessagesContents
+                        // with an unresolved dialog), so every row here is a
+                        // server-confirmed content read — another device
+                        // consumed the media, or the echo of our own request.
+                        // Mark kept flash-media receipts as confirmed.
+                        updateFlowgramViewedReceiptState(did, mid, 2);
                         if (ttl <= 0 || ttl == 0x7FFFFFFF || readDate == 0 || readDate + ttl < currentDate) {
                             ArrayList<Integer> arrayList = toDelete.get(did);
                             if (arrayList == null) {

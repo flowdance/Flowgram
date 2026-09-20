@@ -35,6 +35,7 @@ public class NotificationCenter {
     public static final int closeProfileActivity = totalEvents++;
     public static final int messagesDeleted = totalEvents++;
     public static final int messagesDeletedKept = totalEvents++;
+    public static final int flowgramViewedReceiptUpdated = totalEvents++; // Flowgram fork: args = account (Integer), dialogId (Long), mid (Integer), newState (Integer)
     public static final int historyCleared = totalEvents++;
     public static final int messagesRead = totalEvents++;
     public static final int threadMessagesRead = totalEvents++;

@@ -389,4 +389,6 @@
     <string name="DisableSwipeHideGeneralTopic">禁止左滑隐藏主话题</string>
     <string name="ViewOnceBadge">查看一次</string>
     <string name="SelfDestructBadge">%d 秒自毁</string>
+    <string name="KeptViewOnceReceiptPending">回执待确认</string>
+    <string name="KeptViewOnceReceiptConfirmed">已标记查看</string>
 </resources>

@@ -29,7 +29,8 @@ public class MessageCustomParamsHelper {
             message.translatedText == null &&
             message.translatedRichMessage == null &&
             message.errorAllowedPriceStars == 0 &&
-            message.errorNewPriceStars == 0
+            message.errorNewPriceStars == 0 &&
+            message.flowgramViewedReceiptState == 0
         );
     }
 
@@ -53,6 +54,10 @@ public class MessageCustomParamsHelper {
         toMessage.summaryText = fromMessage.summaryText;
         toMessage.translatedSummaryText = fromMessage.translatedSummaryText;
         toMessage.translatedSummaryLanguage = fromMessage.translatedSummaryLanguage;
+        // Flowgram fork: merge monotonicly — an in-memory object with a
+        // stale state (0/1) must never overwrite an already-confirmed (2)
+        // persisted state when other custom params are being saved.
+        toMessage.flowgramViewedReceiptState = Math.max(fromMessage.flowgramViewedReceiptState, toMessage.flowgramViewedReceiptState);
     }
 
 
@@ -114,6 +119,8 @@ public class MessageCustomParamsHelper {
             flags = setFlag(flags, FLAG_12, message.translatedSummaryLanguage != null);
 
             flags = setFlag(flags, FLAG_13, message.translatedRichMessage != null);
+
+            flags = setFlag(flags, FLAG_14, message.flowgramViewedReceiptState != 0);
         }
 
         @Override
@@ -166,6 +173,12 @@ public class MessageCustomParamsHelper {
             if (hasFlag(flags, FLAG_13)) {
                 message.translatedRichMessage.serializeToStream(stream);
             }
+            // Flowgram fork: appended LAST so that older readers (which stop
+            // at their own flags) and older blobs (which lack this field)
+            // both stay readable.
+            if (hasFlag(flags, FLAG_14)) {
+                stream.writeInt32(message.flowgramViewedReceiptState);
+            }
         }
 
         @Override
@@ -215,6 +228,9 @@ public class MessageCustomParamsHelper {
             }
             if (hasFlag(flags, FLAG_13)) {
                 message.translatedRichMessage = TL_iv.RichMessage.TLdeserialize(stream, stream.readInt32(exception), exception);
+            }
+            if (hasFlag(flags, FLAG_14)) {
+                message.flowgramViewedReceiptState = stream.readInt32(exception);
             }
         }
 

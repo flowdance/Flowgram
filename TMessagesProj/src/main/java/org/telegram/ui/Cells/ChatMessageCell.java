@@ -29532,20 +29532,82 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             keptViewOnceBadgeBgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
             keptViewOnceBadgeBgPaint.setColor(0x99000000);
         }
+        // Flowgram fork: the consumption-receipt state takes priority over
+        // the media type. Layout order: (1) combined "type · state" single
+        // line; (2) state only (media type dropped); (3) two stacked lines,
+        // each ellipsized. All texts are ellipsized as a last resort, so
+        // there is always a defined rendering, and the badge keeps clear of
+        // the bottom-right time area using its real measured width.
+        String stateText = null;
+        if (!currentMessageObject.isOut() && currentMessageObject.messageOwner.flowgramViewedReceiptState != 0) {
+            stateText = LocaleController.getString(currentMessageObject.messageOwner.flowgramViewedReceiptState == 1
+                    ? R.string.KeptViewOnceReceiptPending
+                    : R.string.KeptViewOnceReceiptConfirmed);
+        }
+        float padH = AndroidUtilities.dp(6);
+        float padV = AndroidUtilities.dp(3);
+        float timeClearance;
+        if (shouldDrawTimeOnMedia() && timeLayout != null) {
+            // timeLayout reserves dp(100) of slack; the real occupied width
+            // is the layout width minus that slack.
+            timeClearance = Math.max(0, timeLayout.getWidth() - AndroidUtilities.dp(100)) + AndroidUtilities.dp(8);
+        } else {
+            timeClearance = AndroidUtilities.dp(8);
+        }
+        float available = photoImage.getImageWidth() - AndroidUtilities.dp(6) - padH * 2 - timeClearance;
+        boolean raisedAboveTime = false;
+        if (available < AndroidUtilities.dp(32)) {
+            // Not enough room beside the timestamp: relocate the badge above
+            // the time row, where the full photo width is genuinely available.
+            // A real layout change — the width budget is never inflated.
+            raisedAboveTime = true;
+            available = photoImage.getImageWidth() - AndroidUtilities.dp(6) - padH * 2 - AndroidUtilities.dp(8);
+        }
+        if (available < 0) {
+            available = 0;
+        }
+        String line1;
+        String line2 = null;
+        if (stateText == null) {
+            line1 = TextUtils.ellipsize(text, keptViewOnceBadgePaint, available, TextUtils.TruncateAt.END).toString();
+        } else if (keptViewOnceBadgePaint.measureText(text + " · " + stateText) <= available) {
+            line1 = text + " · " + stateText;
+        } else if (keptViewOnceBadgePaint.measureText(stateText) <= available) {
+            line1 = stateText;
+        } else {
+            line1 = TextUtils.ellipsize(text, keptViewOnceBadgePaint, available, TextUtils.TruncateAt.END).toString();
+            line2 = TextUtils.ellipsize(stateText, keptViewOnceBadgePaint, available, TextUtils.TruncateAt.END).toString();
+        }
         float alpha = photoImage.getAlpha();
         int oldTextAlpha = keptViewOnceBadgePaint.getAlpha();
         int oldBgAlpha = keptViewOnceBadgeBgPaint.getAlpha();
+        if (line1.isEmpty() && (line2 == null || line2.isEmpty())) {
+            // Nothing fits at all (extremely narrow image) — a defined
+            // no-render outcome instead of an empty box.
+            return;
+        }
         keptViewOnceBadgePaint.setAlpha((int) (oldTextAlpha * alpha));
         keptViewOnceBadgeBgPaint.setAlpha((int) (oldBgAlpha * alpha));
-        float textWidth = keptViewOnceBadgePaint.measureText(text);
-        float padH = AndroidUtilities.dp(6);
-        float padV = AndroidUtilities.dp(3);
+        float line1Width = keptViewOnceBadgePaint.measureText(line1);
+        float line2Width = line2 != null ? keptViewOnceBadgePaint.measureText(line2) : 0;
+        float textWidth = Math.max(line1Width, line2Width);
+        float lineHeight = keptViewOnceBadgePaint.getTextSize() + AndroidUtilities.dp(2);
+        float boxInnerH = line2 != null ? lineHeight * 2 : keptViewOnceBadgePaint.getTextSize();
         float x = photoImage.getImageX() + AndroidUtilities.dp(6);
-        float y = photoImage.getImageY() + photoImage.getImageHeight() - AndroidUtilities.dp(6) - keptViewOnceBadgePaint.getTextSize() - padV * 2;
-        keptViewOnceBadgeRect.set(x, y, x + textWidth + padH * 2, y + keptViewOnceBadgePaint.getTextSize() + padV * 2);
+        float y = photoImage.getImageY() + photoImage.getImageHeight() - AndroidUtilities.dp(6) - boxInnerH - padV * 2;
+        if (raisedAboveTime) {
+            // Clear the bottom time row (text + icons) below the badge.
+            y -= AndroidUtilities.dp(18);
+        }
+        keptViewOnceBadgeRect.set(x, y, x + textWidth + padH * 2, y + boxInnerH + padV * 2);
         canvas.drawRoundRect(keptViewOnceBadgeRect, AndroidUtilities.dp(10), AndroidUtilities.dp(10), keptViewOnceBadgeBgPaint);
         Paint.FontMetricsInt fm = keptViewOnceBadgePaint.getFontMetricsInt();
-        canvas.drawText(text, x + padH, keptViewOnceBadgeRect.centerY() - (fm.ascent + fm.descent) / 2f, keptViewOnceBadgePaint);
+        float center1 = line2 != null ? y + padV + lineHeight / 2 : keptViewOnceBadgeRect.centerY();
+        canvas.drawText(line1, x + padH, center1 - (fm.ascent + fm.descent) / 2f, keptViewOnceBadgePaint);
+        if (line2 != null) {
+            float center2 = y + padV + lineHeight + lineHeight / 2;
+            canvas.drawText(line2, x + padH, center2 - (fm.ascent + fm.descent) / 2f, keptViewOnceBadgePaint);
+        }
         keptViewOnceBadgePaint.setAlpha(oldTextAlpha);
         keptViewOnceBadgeBgPaint.setAlpha(oldBgAlpha);
     }
