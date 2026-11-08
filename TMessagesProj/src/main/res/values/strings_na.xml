@@ -389,7 +389,7 @@
     <string name="DisableChatListSwipeGesture">Disable chat list swipe gesture</string>
     <string name="DisableSwipeHideGeneralTopic">Forbid swipe to hide the General topic</string>
     <string name="ViewOnceBadge">View once</string>
-    <string name="SelfDestructBadge">Self-destructs in %ds</string>
+    <string name="SelfDestructBadge">%ds flash photo</string>
     <string name="KeptViewOnceReceiptPending">Receipt pending</string>
     <string name="KeptViewOnceReceiptConfirmed">Marked as viewed</string>
 </resources>

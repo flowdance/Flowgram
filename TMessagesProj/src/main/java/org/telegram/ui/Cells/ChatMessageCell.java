@@ -29518,6 +29518,28 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     private static TextPaint keptViewOnceBadgePaint;
     private static Paint keptViewOnceBadgeBgPaint;
     private static final RectF keptViewOnceBadgeRect = new RectF();
+    // Flowgram fork: per-cell cached badge layout — the text build, concat,
+    // measurement and ellipsize run only when an input actually changes
+    // (message object, receipt state, message/media ttl, photo width, time
+    // clearance, locale, shared paint text size); the per-frame draw only
+    // positions and paints the cached lines. The shared static paint is
+    // re-asserted to the expected size before every draw, so a density
+    // change is picked up even though the paint itself is never recreated,
+    // and the ACTUAL paint text size is part of the key — a shared-paint
+    // update made by another cell invalidates this cell's layout too.
+    private String keptViewOnceBadgeLine1 = "";
+    private String keptViewOnceBadgeLine2;
+    private float keptViewOnceBadgeTextWidth;
+    private float keptViewOnceBadgeBoxInnerH;
+    private boolean keptViewOnceBadgeRaised;
+    private TLRPC.Message keptViewOnceBadgeKeyMessage;
+    private int keptViewOnceBadgeKeyState = -1;
+    private int keptViewOnceBadgeKeyTtl = -1;
+    private int keptViewOnceBadgeKeyTtlSeconds = -1;
+    private float keptViewOnceBadgeKeyImageWidth = -1;
+    private float keptViewOnceBadgeKeyTimeClearance = -1;
+    private float keptViewOnceBadgeKeyTextSize = -1;
+    private Locale keptViewOnceBadgeKeyLocale;
 
     private void drawKeptViewOnceBadge(Canvas canvas) {
         if (!NaConfig.INSTANCE.getKeepViewOnceMedia().Bool() || !drawPhotoImage || currentMessageObject == null || currentMessageObject.messageOwner == null || currentMessageObject.messageOwner instanceof TLRPC.TL_message_secret) {
@@ -29527,12 +29549,6 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
         if (media == null || media.ttl_seconds == 0) {
             return;
         }
-        String text;
-        if (currentMessageObject.messageOwner.ttl == 0x7FFFFFFF || media.ttl_seconds == 0x7FFFFFFF) {
-            text = LocaleController.getString(R.string.ViewOnceBadge);
-        } else {
-            text = LocaleController.formatString(R.string.SelfDestructBadge, media.ttl_seconds);
-        }
         if (keptViewOnceBadgePaint == null) {
             keptViewOnceBadgePaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
             keptViewOnceBadgePaint.setTextSize(AndroidUtilities.dp(11));
@@ -29540,20 +29556,19 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             keptViewOnceBadgeBgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
             keptViewOnceBadgeBgPaint.setColor(0x99000000);
         }
-        // Flowgram fork: the consumption-receipt state takes priority over
-        // the media type. Layout order: (1) combined "type · state" single
-        // line; (2) state only (media type dropped); (3) two stacked lines,
-        // each ellipsized. All texts are ellipsized as a last resort, so
-        // there is always a defined rendering, and the badge keeps clear of
-        // the bottom-right time area using its real measured width.
-        String stateText = null;
-        if (!currentMessageObject.isOut() && currentMessageObject.messageOwner.flowgramViewedReceiptState != 0) {
-            stateText = LocaleController.getString(currentMessageObject.messageOwner.flowgramViewedReceiptState == 1
-                    ? R.string.KeptViewOnceReceiptPending
-                    : R.string.KeptViewOnceReceiptConfirmed);
+        // The paint is shared and static — it is never recreated on
+        // activity/cell rebuild, so a density change would otherwise leave
+        // a stale text size. Re-assert the expected size before every draw;
+        // the key below compares against the paint's ACTUAL size, so the
+        // re-assert (or an update made by any other cell) invalidates this
+        // cell's cached layout.
+        float expectedBadgeTextSize = AndroidUtilities.dp(11);
+        if (keptViewOnceBadgePaint.getTextSize() != expectedBadgeTextSize) {
+            keptViewOnceBadgePaint.setTextSize(expectedBadgeTextSize);
         }
-        float padH = AndroidUtilities.dp(6);
-        float padV = AndroidUtilities.dp(3);
+        // Per-frame key inputs; any change recomputes the cached layout.
+        int receiptState = !currentMessageObject.isOut() ? currentMessageObject.messageOwner.flowgramViewedReceiptState : 0;
+        float imageWidth = photoImage.getImageWidth();
         float timeClearance;
         if (shouldDrawTimeOnMedia() && timeLayout != null) {
             // timeLayout reserves dp(100) of slack; the real occupied width
@@ -29562,62 +29577,107 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
         } else {
             timeClearance = AndroidUtilities.dp(8);
         }
-        float available = photoImage.getImageWidth() - AndroidUtilities.dp(6) - padH * 2 - timeClearance;
-        boolean raisedAboveTime = false;
-        if (available < AndroidUtilities.dp(32)) {
-            // Not enough room beside the timestamp: relocate the badge above
-            // the time row, where the full photo width is genuinely available.
-            // A real layout change — the width budget is never inflated.
-            raisedAboveTime = true;
-            available = photoImage.getImageWidth() - AndroidUtilities.dp(6) - padH * 2 - AndroidUtilities.dp(8);
+        Locale locale = LocaleController.getInstance().currentLocale;
+        if (keptViewOnceBadgeKeyMessage != currentMessageObject.messageOwner
+                || keptViewOnceBadgeKeyState != receiptState
+                || keptViewOnceBadgeKeyTtl != currentMessageObject.messageOwner.ttl
+                || keptViewOnceBadgeKeyTtlSeconds != media.ttl_seconds
+                || keptViewOnceBadgeKeyImageWidth != imageWidth
+                || keptViewOnceBadgeKeyTimeClearance != timeClearance
+                || keptViewOnceBadgeKeyTextSize != keptViewOnceBadgePaint.getTextSize()
+                || keptViewOnceBadgeKeyLocale != locale) {
+            recomputeKeptViewOnceBadgeLayout(media, receiptState, imageWidth, timeClearance, locale);
         }
-        if (available < 0) {
-            available = 0;
-        }
-        String line1;
-        String line2 = null;
-        if (stateText == null) {
-            line1 = TextUtils.ellipsize(text, keptViewOnceBadgePaint, available, TextUtils.TruncateAt.END).toString();
-        } else if (keptViewOnceBadgePaint.measureText(text + " · " + stateText) <= available) {
-            line1 = text + " · " + stateText;
-        } else if (keptViewOnceBadgePaint.measureText(stateText) <= available) {
-            line1 = stateText;
-        } else {
-            line1 = TextUtils.ellipsize(text, keptViewOnceBadgePaint, available, TextUtils.TruncateAt.END).toString();
-            line2 = TextUtils.ellipsize(stateText, keptViewOnceBadgePaint, available, TextUtils.TruncateAt.END).toString();
-        }
-        float alpha = photoImage.getAlpha();
-        int oldTextAlpha = keptViewOnceBadgePaint.getAlpha();
-        int oldBgAlpha = keptViewOnceBadgeBgPaint.getAlpha();
-        if (line1.isEmpty() && (line2 == null || line2.isEmpty())) {
+        if (keptViewOnceBadgeLine1.isEmpty() && (keptViewOnceBadgeLine2 == null || keptViewOnceBadgeLine2.isEmpty())) {
             // Nothing fits at all (extremely narrow image) — a defined
             // no-render outcome instead of an empty box.
             return;
         }
+        float alpha = photoImage.getAlpha();
+        int oldTextAlpha = keptViewOnceBadgePaint.getAlpha();
+        int oldBgAlpha = keptViewOnceBadgeBgPaint.getAlpha();
         keptViewOnceBadgePaint.setAlpha((int) (oldTextAlpha * alpha));
         keptViewOnceBadgeBgPaint.setAlpha((int) (oldBgAlpha * alpha));
-        float line1Width = keptViewOnceBadgePaint.measureText(line1);
-        float line2Width = line2 != null ? keptViewOnceBadgePaint.measureText(line2) : 0;
-        float textWidth = Math.max(line1Width, line2Width);
-        float lineHeight = keptViewOnceBadgePaint.getTextSize() + AndroidUtilities.dp(2);
-        float boxInnerH = line2 != null ? lineHeight * 2 : keptViewOnceBadgePaint.getTextSize();
+        float padH = AndroidUtilities.dp(6);
+        float padV = AndroidUtilities.dp(3);
         float x = photoImage.getImageX() + AndroidUtilities.dp(6);
-        float y = photoImage.getImageY() + photoImage.getImageHeight() - AndroidUtilities.dp(6) - boxInnerH - padV * 2;
-        if (raisedAboveTime) {
+        float y = photoImage.getImageY() + photoImage.getImageHeight() - AndroidUtilities.dp(6) - keptViewOnceBadgeBoxInnerH - padV * 2;
+        if (keptViewOnceBadgeRaised) {
             // Clear the bottom time row (text + icons) below the badge.
             y -= AndroidUtilities.dp(18);
         }
-        keptViewOnceBadgeRect.set(x, y, x + textWidth + padH * 2, y + boxInnerH + padV * 2);
+        keptViewOnceBadgeRect.set(x, y, x + keptViewOnceBadgeTextWidth + padH * 2, y + keptViewOnceBadgeBoxInnerH + padV * 2);
         canvas.drawRoundRect(keptViewOnceBadgeRect, AndroidUtilities.dp(10), AndroidUtilities.dp(10), keptViewOnceBadgeBgPaint);
         Paint.FontMetricsInt fm = keptViewOnceBadgePaint.getFontMetricsInt();
-        float center1 = line2 != null ? y + padV + lineHeight / 2 : keptViewOnceBadgeRect.centerY();
-        canvas.drawText(line1, x + padH, center1 - (fm.ascent + fm.descent) / 2f, keptViewOnceBadgePaint);
-        if (line2 != null) {
+        float lineHeight = keptViewOnceBadgePaint.getTextSize() + AndroidUtilities.dp(2);
+        float center1 = keptViewOnceBadgeLine2 != null ? y + padV + lineHeight / 2 : keptViewOnceBadgeRect.centerY();
+        canvas.drawText(keptViewOnceBadgeLine1, x + padH, center1 - (fm.ascent + fm.descent) / 2f, keptViewOnceBadgePaint);
+        if (keptViewOnceBadgeLine2 != null) {
             float center2 = y + padV + lineHeight + lineHeight / 2;
-            canvas.drawText(line2, x + padH, center2 - (fm.ascent + fm.descent) / 2f, keptViewOnceBadgePaint);
+            canvas.drawText(keptViewOnceBadgeLine2, x + padH, center2 - (fm.ascent + fm.descent) / 2f, keptViewOnceBadgePaint);
         }
         keptViewOnceBadgePaint.setAlpha(oldTextAlpha);
         keptViewOnceBadgeBgPaint.setAlpha(oldBgAlpha);
+    }
+
+    // Flowgram fork: (re)build the cached badge layout. The consumption
+    // state takes priority over the media type. Layout order: (1) combined
+    // "type · state" single line; (2) state only (media type dropped);
+    // (3) two stacked lines, each ellipsized. All texts are ellipsized as a
+    // last resort, so there is always a defined rendering, and the badge
+    // keeps clear of the bottom-right time area using its real measured
+    // width — when there is no room beside the timestamp the badge relocates
+    // above the time row instead of inflating the width budget.
+    private void recomputeKeptViewOnceBadgeLayout(TLRPC.MessageMedia media, int receiptState, float imageWidth, float timeClearance, Locale locale) {
+        keptViewOnceBadgeKeyMessage = currentMessageObject.messageOwner;
+        keptViewOnceBadgeKeyState = receiptState;
+        keptViewOnceBadgeKeyTtl = currentMessageObject.messageOwner.ttl;
+        keptViewOnceBadgeKeyTtlSeconds = media.ttl_seconds;
+        keptViewOnceBadgeKeyImageWidth = imageWidth;
+        keptViewOnceBadgeKeyTimeClearance = timeClearance;
+        keptViewOnceBadgeKeyTextSize = keptViewOnceBadgePaint.getTextSize();
+        keptViewOnceBadgeKeyLocale = locale;
+
+        String text;
+        if (currentMessageObject.messageOwner.ttl == 0x7FFFFFFF || media.ttl_seconds == 0x7FFFFFFF) {
+            text = LocaleController.getString(R.string.ViewOnceBadge);
+        } else {
+            text = LocaleController.formatString(R.string.SelfDestructBadge, media.ttl_seconds);
+        }
+        String stateText = null;
+        if (receiptState != 0) {
+            stateText = LocaleController.getString(receiptState == 1
+                    ? R.string.KeptViewOnceReceiptPending
+                    : R.string.KeptViewOnceReceiptConfirmed);
+        }
+        float padH = AndroidUtilities.dp(6);
+        float available = imageWidth - AndroidUtilities.dp(6) - padH * 2 - timeClearance;
+        keptViewOnceBadgeRaised = false;
+        if (available < AndroidUtilities.dp(32)) {
+            // Not enough room beside the timestamp: relocate the badge above
+            // the time row, where the full photo width is genuinely available.
+            keptViewOnceBadgeRaised = true;
+            available = imageWidth - AndroidUtilities.dp(6) - padH * 2 - AndroidUtilities.dp(8);
+        }
+        if (available < 0) {
+            available = 0;
+        }
+        keptViewOnceBadgeLine2 = null;
+        if (stateText == null) {
+            keptViewOnceBadgeLine1 = TextUtils.ellipsize(text, keptViewOnceBadgePaint, available, TextUtils.TruncateAt.END).toString();
+        } else if (keptViewOnceBadgePaint.measureText(text + " · " + stateText) <= available) {
+            keptViewOnceBadgeLine1 = text + " · " + stateText;
+        } else if (keptViewOnceBadgePaint.measureText(stateText) <= available) {
+            keptViewOnceBadgeLine1 = stateText;
+        } else {
+            keptViewOnceBadgeLine1 = TextUtils.ellipsize(text, keptViewOnceBadgePaint, available, TextUtils.TruncateAt.END).toString();
+            keptViewOnceBadgeLine2 = TextUtils.ellipsize(stateText, keptViewOnceBadgePaint, available, TextUtils.TruncateAt.END).toString();
+        }
+        float line1Width = keptViewOnceBadgePaint.measureText(keptViewOnceBadgeLine1);
+        float line2Width = keptViewOnceBadgeLine2 != null ? keptViewOnceBadgePaint.measureText(keptViewOnceBadgeLine2) : 0;
+        keptViewOnceBadgeTextWidth = Math.max(line1Width, line2Width);
+        float lineHeight = keptViewOnceBadgePaint.getTextSize() + AndroidUtilities.dp(2);
+        keptViewOnceBadgeBoxInnerH = keptViewOnceBadgeLine2 != null ? lineHeight * 2 : keptViewOnceBadgePaint.getTextSize();
     }
 
     protected boolean drawPhotoImage(Canvas canvas) {
