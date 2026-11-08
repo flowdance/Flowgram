@@ -20057,7 +20057,7 @@ public class ChatActivity extends BaseFragment implements
                 }
 
                 int copyVisible = View.GONE, starVisible = View.GONE, newCopyVisible = View.GONE, newStarVisible = View.GONE;
-                boolean noforwardsOverride = noforwards && !NekoXConfig.disableFlagSecure && !NaConfig.INSTANCE.getForceCopy().Bool();
+                boolean noforwardsOverride = noforwards && !NekoXConfig.bypassNoForwards();
                 if (copyItem != null) {
                     copyVisible = copyItem.getVisibility();
                     copyItem.setVisibility(!noforwardsOverride && (selectedMessagesCanCopyIds[0].size() + selectedMessagesCanCopyIds[1].size() != 0) && !NaConfig.INSTANCE.getDisableActionBarButtonCopy().Bool() ? View.VISIBLE : View.GONE);
@@ -31000,9 +31000,28 @@ public class ChatActivity extends BaseFragment implements
 
     Bulletin.Delegate bulletinDelegate;
 
+    // Flowgram fork: see onResume — the effective content-restriction
+    // bypass value seen at the previous resume, used to rebuild code-block
+    // button layouts after the switches change.
+    private boolean flowgramLastCodeBypass;
+    private boolean flowgramCodeBypassInitialized;
+
     @Override
     public void onResume() {
         super.onResume();
+        // Flowgram fork: the code-copy button is baked into text layouts at
+        // generation time. If the effective content-restriction bypass
+        // changed while paused (Force Copy / Disable Flag Secure toggled in
+        // the settings), refresh the visible cells: their checkLayout()
+        // invalidates restricted messages with code blocks and the rebind
+        // rebuilds button, padding and hit area together. Off-screen loaded
+        // messages rebuild lazily on their next bind via the same check.
+        boolean flowgramCodeBypass = NekoXConfig.bypassNoForwards();
+        if (flowgramCodeBypassInitialized && flowgramCodeBypass != flowgramLastCodeBypass) {
+            updateVisibleRows(false);
+        }
+        flowgramLastCodeBypass = flowgramCodeBypass;
+        flowgramCodeBypassInitialized = true;
         checkShowBlur(false);
         activityResumeTime = System.currentTimeMillis();
         if (openImport && getSendMessagesHelper().getImportingHistory(dialog_id) != null) {
@@ -32093,7 +32112,7 @@ public class ChatActivity extends BaseFragment implements
         }
         allowPin = allowPin && message.getId() > 0 && (message.messageOwner.action == null || message.messageOwner.action instanceof TLRPC.TL_messageActionEmpty) && !message.isExpiredStory() && message.type != MessageObject.TYPE_STORY_MENTION;
         boolean noforwards = isPeerNoForwards() || message.messageOwner.noforwards || getDialogId() == UserObject.VERIFY;
-        boolean noforwardsOverride = noforwards && !NekoXConfig.disableFlagSecure && !NaConfig.INSTANCE.getForceCopy().Bool();
+        boolean noforwardsOverride = noforwards && !NekoXConfig.bypassNoForwards();
         boolean noforwardsOrPaidMedia = noforwardsOverride || message.type == MessageObject.TYPE_PAID_MEDIA;
         boolean allowUnpin = message.getDialogId() != mergeDialogId && allowPin && (pinnedMessageObjects.containsKey(message.getId()) || groupedMessages != null && !groupedMessages.messages.isEmpty() && pinnedMessageObjects.containsKey(groupedMessages.messages.get(0).getId())) && !message.isExpiredStory();
         boolean allowEdit = message.canEditMessage(currentChat) && !chatActivityEnterView.hasAudioToSend() && message.getDialogId() != mergeDialogId && message.type != MessageObject.TYPE_STORY && message.type != MessageObject.TYPE_POLL;
@@ -34915,7 +34934,10 @@ public class ChatActivity extends BaseFragment implements
                 break;
             }
             case OPTION_REPLY: {
-                if (selectedObject != null && selectedObject.messageOwner != null && selectedObject.messageOwner.noforwards) {
+                // Flowgram fork: the message-level noforwards gate for
+                // quote-reply honors the unified content-restriction bypass,
+                // matching the copy/forward semantics.
+                if (selectedObject != null && selectedObject.messageOwner != null && selectedObject.messageOwner.noforwards && !NekoXConfig.bypassNoForwards()) {
                     return;
                 }
                 if (selectedObject != null && currentChat != null && (ChatObject.isNotInChat(currentChat) && !ChatObject.isMonoForum(currentChat) && !isThreadChat() || ChatObject.isChannel(currentChat) && !ChatObject.canPost(currentChat) && !currentChat.megagroup || !ChatObject.canSendMessages(currentChat))) {
@@ -37981,7 +38003,7 @@ public class ChatActivity extends BaseFragment implements
             return;
         }
         boolean noforwards = isPeerNoForwards() || (messageObject != null && messageObject.messageOwner != null && messageObject.messageOwner.noforwards);
-        boolean noforwardsOverride = noforwards && !NekoXConfig.disableFlagSecure && !NaConfig.INSTANCE.getForceCopy().Bool();
+        boolean noforwardsOverride = noforwards && !NekoXConfig.bypassNoForwards();
         if (url instanceof URLSpanMono) {
             if (!noforwardsOverride || getDialogId() == UserObject.VERIFY) {
                 ((URLSpanMono) url).copyToClipboard();
@@ -41013,11 +41035,17 @@ public class ChatActivity extends BaseFragment implements
         @Override
         public boolean canSaveRichDocument(ChatMessageCell cell) {
             final MessageObject messageObject = cell == null ? null : cell.getMessageObject();
+            // Flowgram fork: the message-level noforwards term honors the
+            // unified content-restriction bypass, matching the peer-level
+            // term above it; scheduled and paid-media restrictions stay
+            // independent. didPressRichDocumentOptions re-checks this
+            // before showing the menu and saveRichDocument executes under
+            // the same gate.
             return messageObject != null
                 && messageObject.messageOwner != null
                 && chatMode != MODE_SCHEDULED
                 && !isPeerNoForwards()
-                && !messageObject.messageOwner.noforwards
+                && !(messageObject.messageOwner.noforwards && !NekoXConfig.bypassNoForwards())
                 && messageObject.type != MessageObject.TYPE_PAID_MEDIA;
         }
 
@@ -42187,6 +42215,20 @@ public class ChatActivity extends BaseFragment implements
         public void didPressCodeCopy(ChatMessageCell cell, MessageObject.TextLayoutBlock block) {
             if (block == null || block.textLayout == null || block.textLayout.getText() == null) {
                 return;
+            }
+            // Flowgram fork: execution-time gate mirroring the layout-time
+            // hasCodeCopyButton gate. onResume() + checkLayout() rebuild
+            // affected layouts after the bypass switches flip, but cells not
+            // yet rebound (or any path that reaches a stale layout before
+            // the refresh lands) are still covered here — defense in depth
+            // for the window before the rebind.
+            MessageObject codeMessage = cell == null ? null : cell.getMessageObject();
+            if (codeMessage != null && codeMessage.messageOwner != null) {
+                boolean codeRestricted = codeMessage.messageOwner.noforwards
+                        || getMessagesController().isPeerNoForwards(codeMessage.getDialogId());
+                if (codeRestricted && !NekoXConfig.bypassNoForwards()) {
+                    return;
+                }
             }
 
             String string = block.textLayout.getText().toString();
@@ -48229,7 +48271,7 @@ public class ChatActivity extends BaseFragment implements
         }
         allowPin = allowPin && message.getId() > 0 && (message.messageOwner.action == null || message.messageOwner.action instanceof TLRPC.TL_messageActionEmpty) && !message.isExpiredStory() && message.type != MessageObject.TYPE_STORY_MENTION;
         boolean noforwards = isPeerNoForwards() || message.messageOwner.noforwards || getDialogId() == UserObject.VERIFY;
-        boolean noforwardsOverride = noforwards && !NekoXConfig.disableFlagSecure && !NaConfig.INSTANCE.getForceCopy().Bool();
+        boolean noforwardsOverride = noforwards && !NekoXConfig.bypassNoForwards();
         boolean noforwardsOrPaidMedia = noforwardsOverride || message.type == MessageObject.TYPE_PAID_MEDIA;
         boolean allowUnpin = !isEphemeral && message.getDialogId() != mergeDialogId && allowPin && (pinnedMessageObjects.containsKey(message.getId()) || groupedMessages != null && !groupedMessages.messages.isEmpty() && pinnedMessageObjects.containsKey(groupedMessages.messages.get(0).getId())) && !message.isExpiredStory();
         boolean allowEdit = !isEphemeral && message.canEditMessage(currentChat) && !chatActivityEnterView.hasAudioToSend() && message.getDialogId() != mergeDialogId && message.type != MessageObject.TYPE_STORY && message.type != MessageObject.TYPE_POLL;
@@ -48720,15 +48762,19 @@ public class ChatActivity extends BaseFragment implements
                 }
 
                 boolean noforward = getMessagesController().isChatNoForwards(currentChat);
-                boolean noforwardOverride = noforward && !NekoXConfig.disableFlagSecure && !NaConfig.INSTANCE.getForceCopy().Bool();
+                boolean noforwardOverride = noforward && !NekoXConfig.bypassNoForwards();
 
+                // Flowgram fork: the message-level noforwards term honors the
+                // unified bypass, but the VERIFY dialog keeps its own
+                // always-on forward restriction OUTSIDE the bypass — the
+                // original !noforwards gate blocked VERIFY unconditionally.
                 final boolean canForward = !selectedObject.isSponsored()
                     && !isQuickRepliesOrWelcomeMessagesMode()
                     && chatMode != MODE_SCHEDULED
                     && (!selectedObject.needDrawBluredPreview() || selectedObject.hasExtendedMediaPreview())
                     && !selectedObject.isLiveLocation()
                     && selectedObject.type != MessageObject.TYPE_PHONE_CALL
-                    && !noforwards && selectedObject.type != MessageObject.TYPE_SHARING_OFFER
+                    && !noforwardsOverride && getDialogId() != UserObject.VERIFY && selectedObject.type != MessageObject.TYPE_SHARING_OFFER
                     && selectedObject.type != MessageObject.TYPE_GIFT_PREMIUM
                     && selectedObject.type != MessageObject.TYPE_GIFT_OFFER
                     && selectedObject.type != MessageObject.TYPE_COMMUNITY_CHANGED
@@ -48745,7 +48791,11 @@ public class ChatActivity extends BaseFragment implements
                     icons.add(R.drawable.msg_forward);
                 }
                 if (chatMode != MODE_SCHEDULED && !selectedObject.needDrawBluredPreview() && !selectedObject.isLiveLocation() && selectedObject.type != 16) {
-                    if (!noforward && NaConfig.INSTANCE.getShowNoQuoteForward().Bool()) {
+                    // Flowgram fork: NoQuoteForward keeps its own original
+                    // condition (the singular chat-level noforward — no
+                    // message-level, no VERIFY term) and only gains the
+                    // unified bypass.
+                    if (!(noforward && !NekoXConfig.bypassNoForwards()) && NaConfig.INSTANCE.getShowNoQuoteForward().Bool()) {
                         items.add(LocaleController.getString(R.string.NoQuoteForward));
                         options.add(nkbtn_forward_noquote);
                         icons.add(R.drawable.msg_forward_noquote);

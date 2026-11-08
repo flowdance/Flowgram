@@ -6826,11 +6826,11 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public boolean isChatNoForwardsWithOverride(long chatId) {
-        return isChatNoForwards(getChat(chatId)) && !NaConfig.INSTANCE.getForceCopy().Bool();
+        return isChatNoForwards(chatId) && !NekoXConfig.bypassNoForwards();
     }
 
     public boolean isChatNoForwardsWithOverride(TLRPC.Chat chat) {
-        return isChatNoForwards(chat) && !NaConfig.INSTANCE.getForceCopy().Bool();
+        return isChatNoForwards(chat) && !NekoXConfig.bypassNoForwards();
     }
 
     public boolean isPeerNoForwards(long dialogId) {
@@ -6854,11 +6854,11 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public boolean isUserNoForwardsWithOverride(long userId) {
-        return isUserNoForwards(userId) && !NaConfig.INSTANCE.getForceCopy().Bool();
+        return isUserNoForwards(userId) && !NekoXConfig.bypassNoForwards();
     }
 
     public boolean isUserNoForwardsWithOverride(TLRPC.UserFull userFull) {
-        return isUserNoForwards(userFull) && !NaConfig.INSTANCE.getForceCopy().Bool();
+        return isUserNoForwards(userFull) && !NekoXConfig.bypassNoForwards();
     }
 
     public TLRPC.User getUser(Long id) {

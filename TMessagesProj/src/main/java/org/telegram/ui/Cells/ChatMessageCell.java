@@ -6828,8 +6828,16 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
 
     public MultiLayoutTypingAnimator botDraftTypingAnimator;
 
+    private boolean needsCodeCopyLayoutUpdate() {
+        return captionLayout != null && captionLayout.needsCodeCopyUpdate()
+                || explanationLayout != null && explanationLayout.needsCodeCopyUpdate();
+    }
+
     private void setMessageContent(MessageObject messageObject, MessageObject.GroupedMessages groupedMessages, boolean bottomNear, boolean topNear, boolean firstInChat, boolean lastInChatList) {
-        if (messageObject.checkLayout() || currentPosition != null && lastHeight != AndroidUtilities.displaySize.y) {
+        // Media captions and poll explanations have their own layouts, even
+        // when MessageObject.checkLayout() does not handle the message type.
+        // Rebind the entire cell so button geometry and bubble height agree.
+        if (messageObject.checkLayout() || needsCodeCopyLayoutUpdate() || currentPosition != null && lastHeight != AndroidUtilities.displaySize.y) {
             currentMessageObject = null;
         }
         messageObject.isOutOwnerCached = null;
@@ -13802,7 +13810,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
 
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-        if (currentMessageObject != null && (currentMessageObject.checkLayout() || lastHeight != AndroidUtilities.displaySize.y)) {
+        if (currentMessageObject != null && (currentMessageObject.checkLayout() || needsCodeCopyLayoutUpdate() || lastHeight != AndroidUtilities.displaySize.y)) {
             inLayout = true;
             MessageObject messageObject = currentMessageObject;
             currentMessageObject = null;

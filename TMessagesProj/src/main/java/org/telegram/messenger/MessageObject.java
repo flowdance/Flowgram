@@ -363,6 +363,12 @@ public class MessageObject {
     public int emojiOnlyCount, animatedEmojiCount;
     public int totalAnimatedEmojiCount;
     private boolean layoutCreated;
+    // Flowgram fork: generation inputs of the code-copy button gate — the
+    // pre-bypass restricted value and the effective bypass when the text
+    // layout was built. checkLayout() uses them to invalidate the layout of
+    // restricted messages with code blocks when the bypass switches flip.
+    private boolean generatedCodeRestricted;
+    private boolean generatedWithCodeBypass;
     private int generatedWithMinSize;
     private float generatedWithDensity;
     private float generatedWithFontSize;
@@ -6825,6 +6831,15 @@ public class MessageObject {
             if (Math.abs(generatedWithMinSize - newMinSize) > dp(52) || generatedWithDensity != AndroidUtilities.density || generatedWithFontSize != newFontSize) {
                 layoutCreated = false;
             }
+            // Flowgram fork: the code-copy button (hasCodeCopyButton, its
+            // padBottom reserve and its hit area) is baked into the text
+            // layout at generation time. When the effective content-
+            // restriction bypass flipped since this layout was built, a
+            // restricted message with code blocks must rebuild — the next
+            // setMessageContent rebind regenerates all three together.
+            if (generatedCodeRestricted && hasCode && generatedWithCodeBypass != NekoXConfig.bypassNoForwards()) {
+                layoutCreated = false;
+            }
         }
         if (!layoutCreated) {
             layoutCreated = true;
@@ -8703,6 +8718,16 @@ public class MessageObject {
             final long dialogId = getDialogId();
             noforwards = MessagesController.getInstance(currentAccount).isPeerNoForwards(dialogId);
         }
+        // Flowgram fork: remember the generation inputs of the code-copy
+        // button gate (pre-bypass restricted value + effective bypass) so
+        // checkLayout() can rebuild when the switches flip; then apply the
+        // unified content-restriction bypass (Force Copy OR Disable Flag
+        // Secure), matching the text-copy menu semantics.
+        generatedCodeRestricted = noforwards;
+        generatedWithCodeBypass = NekoXConfig.bypassNoForwards();
+        if (noforwards && generatedWithCodeBypass) {
+            noforwards = false;
+        }
 
         textLayoutBlocks = new ArrayList<>();
         textWidth = 0;
@@ -9167,6 +9192,13 @@ public class MessageObject {
         public final ArrayList<TextLayoutBlock> textLayoutBlocks = new ArrayList<>();
         public boolean hasCode, hasCodeAtTop, hasCodeAtBottom, hasSingleCode;
         public boolean hasQuote, hasQuoteAtBottom, hasSingleQuote;
+        private final boolean generatedCodeRestricted;
+        private final boolean generatedWithCodeBypass;
+
+        public boolean needsCodeCopyUpdate() {
+            return generatedCodeRestricted && hasCode
+                    && generatedWithCodeBypass != NekoXConfig.bypassNoForwards();
+        }
 
         public int textHeight() {
             int h = 0;
@@ -9198,6 +9230,13 @@ public class MessageObject {
             if (messageObject != null && !noforwards) {
                 final long dialogId = messageObject.getDialogId();
                 noforwards = MessagesController.getInstance(messageObject.currentAccount).isPeerNoForwards(dialogId);
+            }
+            // Each caption/explanation owns its generation inputs; rebuilding
+            // it must not overwrite the main message layout's snapshot.
+            generatedCodeRestricted = noforwards;
+            generatedWithCodeBypass = NekoXConfig.bypassNoForwards();
+            if (noforwards && generatedWithCodeBypass) {
+                noforwards = false;
             }
 
             hasCode = text instanceof Spanned && ((Spanned) text).getSpans(0, text.length(), CodeHighlighting.Span.class).length > 0;
@@ -11683,7 +11722,12 @@ public class MessageObject {
     public boolean canForwardMessage() {
         if (isQuickReply()) return false;
         if (type == TYPE_GIFT_STARS || type == TYPE_GIFT_THEME_UPDATE || type == TYPE_SUGGEST_BIRTHDAY || type == TYPE_GIFT_OFFER || type == TYPE_SHARING_OFFER || type == TYPE_COMMUNITY_CHANGED) return false;
-        return !(messageOwner instanceof TLRPC.TL_message_secret) && !needDrawBluredPreview() && !isLiveLocation() && type != MessageObject.TYPE_PHONE_CALL && !isSponsored() && !messageOwner.noforwards;
+        // Flowgram fork: the message-level noforwards flag honors the
+        // unified content-restriction bypass (Force Copy OR Disable Flag
+        // Secure), so every forward entry point — popup, multi-select and
+        // the photo viewer — applies one rule. Server-side
+        // CHAT_FORWARDS_RESTRICTED still applies on restricted chats.
+        return !(messageOwner instanceof TLRPC.TL_message_secret) && !needDrawBluredPreview() && !isLiveLocation() && type != MessageObject.TYPE_PHONE_CALL && !isSponsored() && !(messageOwner.noforwards && !NekoXConfig.bypassNoForwards());
     }
 
     public boolean canEditMedia() {
