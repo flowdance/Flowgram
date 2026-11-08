@@ -724,6 +724,7 @@ public class ChatActivityEnterView extends FrameLayout implements
     private boolean draftSearchWebpage;
 
     private boolean isPaste;
+    private boolean suppressEnterToSend;
 
     private boolean destroyed;
 
@@ -5806,6 +5807,17 @@ public class ChatActivityEnterView extends FrameLayout implements
         CanvasButton canvasButton;
 
         @Override
+        public void makeSelectedQuote(boolean collapse) {
+            // Quote formatting inserts boundary newlines; they must not trigger Enter-to-send.
+            suppressEnterToSend = true;
+            try {
+                super.makeSelectedQuote(collapse);
+            } finally {
+                suppressEnterToSend = false;
+            }
+        }
+
+        @Override
         protected void onScrollChanged(int horiz, int vert, int oldHoriz, int oldVert) {
             super.onScrollChanged(horiz, vert, oldHoriz, oldVert);
             if (delegate != null) {
@@ -6481,7 +6493,7 @@ public class ChatActivityEnterView extends FrameLayout implements
                 if (innerTextChange == 1) {
                     return;
                 }
-                if (sendByEnter && !ctrlPressed && !shiftPressed && !ignoreTextChange && !isPaste && editingMessageObject == null && count > before && charSequence.length() > 0 && charSequence.length() == start + count && charSequence.charAt(charSequence.length() - 1) == '\n') {
+                if (!suppressEnterToSend && sendByEnter && !ctrlPressed && !shiftPressed && !ignoreTextChange && !isPaste && editingMessageObject == null && count > before && charSequence.length() > 0 && charSequence.length() == start + count && charSequence.charAt(charSequence.length() - 1) == '\n') {
                     nextChangeIsSend = true;
                 }
                 isPaste = false;
